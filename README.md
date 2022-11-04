@@ -73,11 +73,11 @@ CREATE EXTENSION kite_fdw;
 -- create server object
 CREATE SERVER kite_server
 	FOREIGN DATA WRAPPER kite_fdw
-	OPTIONS (host '127.0.0.1:7878', port '7878', fragcnt '4');
+	OPTIONS (host '127.0.0.1:7878', dbname 'pgsql', fragcnt '4');
 
 -- create user mapping
-CREATE USER MAPPING FOR postgres
-	SERVER mysql_server
+CREATE USER MAPPING FOR pgsql
+	SERVER kite_server
 	OPTIONS (username 'foo', password 'bar');
 
 -- create foreign table
@@ -87,8 +87,8 @@ CREATE FOREIGN TABLE warehouse
 		warehouse_name text,
 		warehouse_created timestamp
 	)
-	SERVER mysql_server
-	OPTIONS (dbname 'db', table_name 'warehouse');
+	SERVER kite_server
+	OPTIONS (schema_name 'public', table_name 'warehouse*');
 
 -- select from table
 SELECT * FROM warehouse ORDER BY 1;

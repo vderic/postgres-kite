@@ -1,0 +1,5 @@
+# kite_fdw extension
+comment = 'foreign-data wrapper for remote Kite servers'
+default_version = '1.1'
+module_pathname = '$libdir/kite_fdw'
+relocatable = true

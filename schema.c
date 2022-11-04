@@ -1,4 +1,4 @@
-#include "json.h"
+#include "schema.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_type_d.h"

@@ -53,7 +53,7 @@
 #include "kitesdk.h"
 #include "nodes/print.h"
 #include "xrg.h"
-#include "json.h"
+#include "schema.h"
 #include "decode.h"
 #include "agg.h"
 

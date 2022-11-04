@@ -9,7 +9,7 @@ OBJS = \
 	kite_fdw.o \
 	shippable.o \
 	decimal.o \
-	json.o \
+	schema.o \
 	decode.o \
 	op.o \
 	numeric.o \

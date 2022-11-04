@@ -33,9 +33,6 @@ To compile the Kite foreign data wrapper,
     $ make USE_PGXS=1 install
     ```
 
-If you run into any issues, please [let us know][2].
-
-
 Usage
 -----
 

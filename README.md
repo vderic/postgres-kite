@@ -35,7 +35,7 @@ Usage
 
 The following parameters can be set on a Kite foreign server object:
 
-  * `host`: List of addresses or hostname:port of the Kite servers.
+  * `host`: List of addresses or hostname:port of the Kite servers separated by comma ','.
   * `dbname`: Name of the Postgres database to query. This is a mandatory
     option.
   * `fragcnt`: The number of fragment per query

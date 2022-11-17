@@ -2399,7 +2399,7 @@ deparseReturningList(StringInfo buf, RangeTblEntry *rte,
  * Note: pg_relation_size() exists in 8.1 and later.
  */
 void
-deparseAnalyzeSizeSql(StringInfo buf, Relation rel)
+deparseAnalyzeSizeSql(StringInfo buf, Relation rel, List **retrieved_attrs, List **aggfnoids)
 {
 	StringInfoData relname;
 
@@ -2409,6 +2409,9 @@ deparseAnalyzeSizeSql(StringInfo buf, Relation rel)
 
 	appendStringInfoString(buf, "SELECT COUNT(*) FROM ");
 	deparseStringLiteral(buf, relname.data);
+
+	*retrieved_attrs = lappend_int(*retrieved_attrs, 1);
+	*aggfnoids = lappend_oid(*aggfnoids, 2803); // COUNT(*)
 }
 
 /*

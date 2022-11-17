@@ -224,7 +224,7 @@ extern void deparseDirectDeleteSql(StringInfo buf, PlannerInfo *root,
 								   List **params_list,
 								   List *returningList,
 								   List **retrieved_attrs);
-extern void deparseAnalyzeSizeSql(StringInfo buf, Relation rel);
+extern void deparseAnalyzeSizeSql(StringInfo buf, Relation rel, List **retrieved_attrs, List **aggfnoids);
 extern void deparseAnalyzeSql(StringInfo buf, Relation rel,
 							  List **retrieved_attrs,
 							  int targrows,

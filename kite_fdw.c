@@ -245,6 +245,10 @@ static void postgresGetForeignUpperPaths(PlannerInfo *root,
 										 RelOptInfo *output_rel,
 										 void *extra);
 
+static bool postgresAnalyzeForeignTable(Relation relation,
+										AcquireSampleRowsFunc *func,
+										BlockNumber *totalpages);
+
 
 /*
  * Helper functions
@@ -311,6 +315,10 @@ static void merge_fdw_options(PgFdwRelationInfo *fpinfo,
 							  const PgFdwRelationInfo *fpinfo_o,
 							  const PgFdwRelationInfo *fpinfo_i);
 
+static int	postgresAcquireSampleRowsFunc(Relation relation, int elevel,
+										  HeapTuple *rows, int targrows,
+										  double *totalrows,
+										  double *totaldeadrows);
 
 /*
  * Foreign-data wrapper handler function: return a struct with pointers
@@ -332,6 +340,9 @@ kite_fdw_handler(PG_FUNCTION_ARGS)
 
 	/* Support functions for upper relation push-down */
 	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
+
+	/* Support functions for analyze foreign tables */
+	routine->AnalyzeForeignTable = postgresAnalyzeForeignTable;
 
 	PG_RETURN_POINTER(routine);
 }
@@ -3107,3 +3118,134 @@ find_em_for_rel_target(PlannerInfo *root, EquivalenceClass *ec,
 	return NULL;
 }
 
+static bool kite_get_relation_stats(Relation relation, BlockNumber *totalpages, double *totalrows) 
+{
+	PgFdwRelationInfo *fpinfo;
+	char errmsg[1024];
+	ForeignTable *table;
+	UserMapping *user;
+	kite_request_t *req;
+	StringInfoData sql, schema;
+	List *retrieved_attrs, *aggfnoids;
+	Datum datum;
+	bool flag;
+	xrg_agg_t *agg = 0;
+	int64_t nrow = 0;
+
+	fpinfo = (PgFdwRelationInfo *) palloc0(sizeof(PgFdwRelationInfo));
+	fpinfo->fragcnt = 1;
+	apply_server_options(fpinfo);
+	apply_table_options(fpinfo);
+
+	retrieved_attrs = aggfnoids = NULL;
+
+	/*
+	 * Get the connection to use.  We do the remote access as the table's
+	 * owner, even if the ANALYZE was started by some other user.
+	 */
+	table = GetForeignTable(RelationGetRelid(relation));
+	user = GetUserMapping(relation->rd_rel->relowner, table->serverid);
+	req = GetConnection(user, false, NULL);
+
+	/*
+	 * Construct command to get page count for relation.
+	 */
+	initStringInfo(&sql);
+	deparseAnalyzeSizeSql(&sql, relation, &retrieved_attrs, &aggfnoids);
+
+	/*
+	 * build the schema for KITE
+	 */
+	{
+		TupleDesc tupdesc = RelationGetDescr(relation);
+		initStringInfo(&schema);
+		kite_build_schema(&schema, tupdesc);
+	}
+
+	req->hdl = kite_submit(req->host, schema.data, sql.data, -1, fpinfo->fragcnt, errmsg, sizeof(errmsg));
+	if (! req->hdl) {
+		elog(ERROR, "kite_submit failed -- %s", errmsg);
+		return false;
+	}
+	agg = xrg_agg_init(retrieved_attrs, aggfnoids, 0);
+
+	xrg_agg_fetch(agg, req->hdl);
+
+	if  (xrg_agg_get_next(agg, 0, &datum, &flag, 1) != 0) {
+		elog(ERROR, "kite: select count(*) return no result");
+		return false;
+	}
+
+	xrg_agg_destroy(agg);
+
+	nrow = DatumGetInt64(datum);
+	*totalrows = (double) nrow;
+
+	*totalpages = nrow / 200;
+	if (*totalpages == 0) {
+		*totalpages = 1;
+	}
+
+	elog(LOG, "Analyze totalrows = %ld, totalpages = %u", nrow, *totalpages);
+	ReleaseConnection(req);
+
+	return true;
+}
+
+
+
+/*
+ * postgresAnalyzeForeignTable
+ *		Test whether analyzing this foreign table is supported
+ */
+static bool
+postgresAnalyzeForeignTable(Relation relation,
+							AcquireSampleRowsFunc *func,
+							BlockNumber *totalpages)
+{
+
+	double totalrows = 0;
+
+	/* Return the row-analysis function pointer */
+	*func = postgresAcquireSampleRowsFunc;
+
+	//return kite_get_relation_stats(relation, totalpages, &totalrows);
+	// give fake number and get the stats in the later stage
+	*totalpages = 100;
+
+	return true;
+}
+
+/*
+ * Acquire a random sample of rows from foreign table managed by postgres_fdw.
+ *
+ * We fetch the whole table from the remote side and pick out some sample rows.
+ *
+ * Selected rows are returned in the caller-allocated array rows[],
+ * which must have at least targrows entries.
+ * The actual number of rows selected is returned as the function result.
+ * We also count the total number of rows in the table and return it into
+ * *totalrows.  Note that *totaldeadrows is always set to 0.
+ *
+ * Note that the returned list of rows is not always in order by physical
+ * position in the table.  Therefore, correlation estimates derived later
+ * may be meaningless, but it's OK because we don't use the estimates
+ * currently (the planner only pays attention to correlation for indexscans).
+ */
+static int
+postgresAcquireSampleRowsFunc(Relation relation, int elevel,
+							  HeapTuple *rows, int targrows,
+							  double *totalrows,
+							  double *totaldeadrows)
+{
+	BlockNumber totalpages = 0;
+
+	if (! kite_get_relation_stats(relation, &totalpages, totalrows)) {
+		elog(ERROR, "kite_Get_relation_stats failed");
+		return 0;
+	}
+
+	*totalrows = 0;
+	*totaldeadrows = 0;
+	return 0;
+}

@@ -2407,7 +2407,7 @@ deparseAnalyzeSizeSql(StringInfo buf, Relation rel)
 	initStringInfo(&relname);
 	deparseRelation(&relname, rel);
 
-	appendStringInfoString(buf, "SELECT count(*) from ");
+	appendStringInfoString(buf, "SELECT COUNT(*) FROM ");
 	deparseStringLiteral(buf, relname.data);
 }
 
@@ -2477,6 +2477,7 @@ deparseAnalyzeSql(StringInfo buf, Relation rel, List **retrieved_attrs, int targ
 	if (randomThreshold < 1.0) {
 		appendStringInfo(buf, " WHERE RANDOM() < %.38f", randomThreshold);
 	}
+	appendStringInfo(buf, " LIMIT %lu", (unsigned long) targrows);
 
 }
 

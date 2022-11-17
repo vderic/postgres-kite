@@ -2408,7 +2408,7 @@ deparseAnalyzeSizeSql(StringInfo buf, Relation rel, List **retrieved_attrs, List
 	deparseRelation(&relname, rel);
 
 	appendStringInfoString(buf, "SELECT COUNT(*) FROM ");
-	deparseStringLiteral(buf, relname.data);
+	appendStringInfoString(buf, relname.data);
 
 	*retrieved_attrs = lappend_int(*retrieved_attrs, 1);
 	*aggfnoids = lappend_oid(*aggfnoids, 2803); // COUNT(*)

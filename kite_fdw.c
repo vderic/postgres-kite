@@ -2992,6 +2992,10 @@ static bool kite_get_relation_stats(Relation relation, BlockNumber *totalpages, 
 	int64_t nrow = 0;
 
 	fpinfo = (PgFdwRelationInfo *)palloc0(sizeof(PgFdwRelationInfo));
+	/* Look up foreign-table catalog info. */
+        fpinfo->table = GetForeignTable(relation->rd_id);
+        fpinfo->server = GetForeignServer(fpinfo->table->serverid);
+
 	fpinfo->fragcnt = 1;
 	apply_server_options(fpinfo);
 	apply_table_options(fpinfo);
@@ -3012,6 +3016,7 @@ static bool kite_get_relation_stats(Relation relation, BlockNumber *totalpages, 
 	initStringInfo(&sql);
 	deparseAnalyzeSizeSql(&sql, relation, &retrieved_attrs, &aggfnoids);
 
+	//elog(LOG, "sql %s", sql.data);
 	/*
          * build the schema for KITE
 	 */
@@ -3020,6 +3025,7 @@ static bool kite_get_relation_stats(Relation relation, BlockNumber *totalpages, 
 		initStringInfo(&schema);
 		kite_build_schema(&schema, tupdesc);
 	}
+	//elog(LOG, "scheam %s", schema.data);
 
 	req->hdl = kite_submit(req->host, schema.data, sql.data, -1, fpinfo->fragcnt, errmsg, sizeof(errmsg));
 	if (!req->hdl) {
@@ -3115,6 +3121,10 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 	astate.samplerows = 0;
 
 	fpinfo = (PgFdwRelationInfo *)palloc0(sizeof(PgFdwRelationInfo));
+	/* Look up foreign-table catalog info. */
+        fpinfo->table = GetForeignTable(relation->rd_id);
+        fpinfo->server = GetForeignServer(fpinfo->table->serverid);
+
 	fpinfo->fragcnt = 1;
 	apply_server_options(fpinfo);
 	apply_table_options(fpinfo);

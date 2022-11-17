@@ -2407,9 +2407,8 @@ deparseAnalyzeSizeSql(StringInfo buf, Relation rel)
 	initStringInfo(&relname);
 	deparseRelation(&relname, rel);
 
-	appendStringInfoString(buf, "SELECT pg_catalog.pg_relation_size(");
+	appendStringInfoString(buf, "SELECT count(*) from ");
 	deparseStringLiteral(buf, relname.data);
-	appendStringInfo(buf, "::pg_catalog.regclass) / %d", BLCKSZ);
 }
 
 /*
@@ -2419,7 +2418,7 @@ deparseAnalyzeSizeSql(StringInfo buf, Relation rel)
  * is returned to *retrieved_attrs.
  */
 void
-deparseAnalyzeSql(StringInfo buf, Relation rel, List **retrieved_attrs)
+deparseAnalyzeSql(StringInfo buf, Relation rel, List **retrieved_attrs, int targrows, double totalrows)
 {
 	Oid			relid = RelationGetRelid(rel);
 	TupleDesc	tupdesc = RelationGetDescr(rel);
@@ -2428,6 +2427,7 @@ deparseAnalyzeSql(StringInfo buf, Relation rel, List **retrieved_attrs)
 	List	   *options;
 	ListCell   *lc;
 	bool		first = true;
+	float4 randomThreshold = 0.0;
 
 	*retrieved_attrs = NIL;
 
@@ -2471,6 +2471,13 @@ deparseAnalyzeSql(StringInfo buf, Relation rel, List **retrieved_attrs)
 	 */
 	appendStringInfoString(buf, " FROM ");
 	deparseRelation(buf, rel);
+
+	/* KITE */
+	randomThreshold = targrows / totalrows * 100;
+	if (randomThreshold < 1.0) {
+		appendStringInfo(buf, " WHERE RANDOM() < %.38f", randomThreshold);
+	}
+
 }
 
 /*

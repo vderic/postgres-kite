@@ -226,7 +226,9 @@ extern void deparseDirectDeleteSql(StringInfo buf, PlannerInfo *root,
 								   List **retrieved_attrs);
 extern void deparseAnalyzeSizeSql(StringInfo buf, Relation rel);
 extern void deparseAnalyzeSql(StringInfo buf, Relation rel,
-							  List **retrieved_attrs);
+							  List **retrieved_attrs,
+							  int targrows,
+							  double totalrows);
 extern void deparseTruncateSql(StringInfo buf,
 							   List *rels,
 							   DropBehavior behavior,

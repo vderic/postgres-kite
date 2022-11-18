@@ -3033,7 +3033,6 @@ static bool kite_get_relation_stats(PgFdwRelationInfo *fpinfo, Relation relation
 			elog(ERROR, "kite: select count(*) return no result");
 			return false;
 		}
-		xrg_agg_destroy(agg);
 		nrow = DatumGetInt64(datum);
 		*totalrows = (double)nrow;
 
@@ -3046,6 +3045,7 @@ static bool kite_get_relation_stats(PgFdwRelationInfo *fpinfo, Relation relation
 	}
 	PG_FINALLY();
 	{
+		if (agg) xrg_agg_destroy(agg);
 		ReleaseConnection(req);
 	}
 	PG_END_TRY();

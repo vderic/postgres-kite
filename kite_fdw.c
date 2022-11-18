@@ -2978,8 +2978,7 @@ find_em_for_rel_target(PlannerInfo *root, EquivalenceClass *ec,
 	return NULL;
 }
 
-static bool kite_get_relation_stats(Relation relation, BlockNumber *totalpages, double *totalrows) {
-	PgFdwRelationInfo *fpinfo;
+static bool kite_get_relation_stats(PgFdwRelationInfo *fpinfo, Relation relation, BlockNumber *totalpages, double *totalrows) {
 	char errmsg[1024];
 	ForeignTable *table;
 	UserMapping *user;
@@ -2990,15 +2989,6 @@ static bool kite_get_relation_stats(Relation relation, BlockNumber *totalpages, 
 	bool flag;
 	xrg_agg_t *agg = 0;
 	int64_t nrow = 0;
-
-	fpinfo = (PgFdwRelationInfo *)palloc0(sizeof(PgFdwRelationInfo));
-	/* Look up foreign-table catalog info. */
-        fpinfo->table = GetForeignTable(relation->rd_id);
-        fpinfo->server = GetForeignServer(fpinfo->table->serverid);
-
-	fpinfo->fragcnt = 1;
-	apply_server_options(fpinfo);
-	apply_table_options(fpinfo);
 
 	retrieved_attrs = aggfnoids = NULL;
 
@@ -3032,27 +3022,33 @@ static bool kite_get_relation_stats(Relation relation, BlockNumber *totalpages, 
 		elog(ERROR, "kite_submit failed -- %s", errmsg);
 		return false;
 	}
-	agg = xrg_agg_init(retrieved_attrs, aggfnoids, 0);
 
-	xrg_agg_fetch(agg, req->hdl);
+	PG_TRY();
+	{
+		agg = xrg_agg_init(retrieved_attrs, aggfnoids, 0);
 
-	if (xrg_agg_get_next(agg, 0, &datum, &flag, 1) != 0) {
-		elog(ERROR, "kite: select count(*) return no result");
-		return false;
+		xrg_agg_fetch(agg, req->hdl);
+
+		if (xrg_agg_get_next(agg, 0, &datum, &flag, 1) != 0) {
+			elog(ERROR, "kite: select count(*) return no result");
+			return false;
+		}
+		xrg_agg_destroy(agg);
+		nrow = DatumGetInt64(datum);
+		*totalrows = (double)nrow;
+
+		*totalpages = nrow / 200;
+		if (*totalpages == 0) {
+			*totalpages = 1;
+		}
+
+		elog(LOG, "Analyze totalrows = %ld, totalpages = %u", nrow, *totalpages);
 	}
-
-	xrg_agg_destroy(agg);
-
-	nrow = DatumGetInt64(datum);
-	*totalrows = (double)nrow;
-
-	*totalpages = nrow / 200;
-	if (*totalpages == 0) {
-		*totalpages = 1;
+	PG_FINALLY();
+	{
+		ReleaseConnection(req);
 	}
-
-	elog(LOG, "Analyze totalrows = %ld, totalpages = %u", nrow, *totalpages);
-	ReleaseConnection(req);
+	PG_END_TRY();
 
 	return true;
 }
@@ -3122,14 +3118,14 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 
 	fpinfo = (PgFdwRelationInfo *)palloc0(sizeof(PgFdwRelationInfo));
 	/* Look up foreign-table catalog info. */
-        fpinfo->table = GetForeignTable(relation->rd_id);
-        fpinfo->server = GetForeignServer(fpinfo->table->serverid);
+	fpinfo->table = GetForeignTable(relation->rd_id);
+	fpinfo->server = GetForeignServer(fpinfo->table->serverid);
 
 	fpinfo->fragcnt = 1;
 	apply_server_options(fpinfo);
 	apply_table_options(fpinfo);
 
-	if (!kite_get_relation_stats(relation, &totalpages, &astate.samplerows)) {
+	if (!kite_get_relation_stats(fpinfo, relation, &totalpages, &astate.samplerows)) {
 		elog(ERROR, "kite_Get_relation_stats failed");
 		return 0;
 	}
@@ -3170,33 +3166,40 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 		return 0;
 	}
 
-	oldcontext = MemoryContextSwitchTo(astate.anl_cxt);
-	for (int i = 0; i < targrows; i++) {
+	PG_TRY();
+	{
 
-		e = kite_next_row(req->hdl, &iter, errormsg, sizeof(errormsg));
-		if (e == 0) {
-			if (iter == 0) {
-				break;
+		oldcontext = MemoryContextSwitchTo(astate.anl_cxt);
+		for (int i = 0; i < targrows; i++) {
+
+			e = kite_next_row(req->hdl, &iter, errormsg, sizeof(errormsg));
+			if (e == 0) {
+				if (iter == 0) {
+					break;
+				}
+
+				rows[i] = make_tuple_from_result_row(iter,
+					i,
+					astate.rel,
+					astate.attinmeta,
+					retrieved_attrs,
+					NULL,
+					astate.temp_cxt);
+
+				astate.numrows++;
+			} else {
+				elog(ERROR, "kite_next_row failed");
 			}
-
-			rows[i] = make_tuple_from_result_row(iter,
-				i,
-				astate.rel,
-				astate.attinmeta,
-				retrieved_attrs,
-				NULL,
-				astate.temp_cxt);
-
-			astate.numrows++;
-		} else {
-			elog(ERROR, "kite_next_row failed");
 		}
+		MemoryContextSwitchTo(oldcontext);
+
+		elog(LOG, "Analyze sample received %d rows, targrows =%d", astate.numrows, astate.targrows);
 	}
-	MemoryContextSwitchTo(oldcontext);
-
-	elog(LOG, "Analyze sample received %d rows, targrows =%d", astate.numrows, astate.targrows);
-
-	ReleaseConnection(req);
+	PG_FINALLY();
+	{
+		ReleaseConnection(req);
+	}
+	PG_END_TRY();
 
 	/* We assume that we have no dead tuple */
 	*totaldeadrows = 0;

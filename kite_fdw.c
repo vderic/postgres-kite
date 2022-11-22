@@ -1994,6 +1994,12 @@ merge_fdw_options(PgFdwRelationInfo *fpinfo,
 	fpinfo->fetch_size = fpinfo_o->fetch_size;
 	fpinfo->fragcnt = fpinfo_o->fragcnt;
 	fpinfo->async_capable = fpinfo_o->async_capable;
+	fpinfo->fmt = fpinfo_o->fmt;
+	fpinfo->csv_delim = fpinfo_o->csv_delim;
+	fpinfo->csv_quote = fpinfo_o->csv_quote;
+	fpinfo->csv_escape = fpinfo_o->csv_escape;
+	fpinfo->csv_nullstr = fpinfo_o->csv_nullstr;
+	fpinfo->csv_header = fpinfo_o->csv_header;
 
 	/* Merge the table level options from either side of the join. */
 	if (fpinfo_i) {

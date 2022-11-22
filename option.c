@@ -262,6 +262,12 @@ InitPgFdwOptions(void)
 
 		/* kite specified options */
 		{"fragcnt", ForeignServerRelationId, false},
+		{"fmt", ForeignTableRelationId, false},
+		{"csv_delimiter", ForeignTableRelationId, false},
+		{"csv_quote", ForeignTableRelationId, false},
+		{"csv_escape", ForeignTableRelationId, false},
+		{"csv_header", ForeignTableRelationId, false},
+		{"csv_nullstr", ForeignTableRelationId, false},
 
 		{NULL, InvalidOid, false}
 	};

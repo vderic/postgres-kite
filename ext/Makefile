@@ -9,7 +9,7 @@ SOCKSTREAMTAR = sockstream-r220819.zip
 SOCKSTREAMDIR = $(SOCKSTREAMTAR:.zip=)
 HOPZIP = hop-r221018.zip
 HOPDIR = $(HOPZIP:.zip=)
-KITESDKZIP = kite-client-sdk-r221116.zip
+KITESDKZIP = kite-client-sdk-r221121.zip
 KITESDKDIR = $(KITESDKZIP:.zip=)
 
 

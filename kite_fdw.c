@@ -86,6 +86,8 @@ enum FdwScanPrivateIndex {
 	FdwScanPrivateFetchSize,
 	/* Integer represeting the number of fragment in kite */
 	FdwScanPrivateFragCnt,
+	/* FileSpec (as kite_filespec_t) */
+	FdwScanPrivateFileSpec,
 
 	/*
 	 * String describing join i.e. names of relations being joined and types
@@ -111,6 +113,7 @@ typedef struct PgFdwScanState {
 	AttInMetadata *attinmeta; /* attribute datatype conversion metadata */
 
 	/* extracted fdw_private data */
+	kite_filespec_t *fspec;                    /* filespec of the table */
 	char *schema;				   /* text of schema */
 	char *query;				   /* text of SELECT command */
 	List *retrieved_attrs;		   /* list of retrieved attribute numbers */
@@ -378,6 +381,11 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	fpinfo->fetch_size = 100;
 	fpinfo->async_capable = false;
 	fpinfo->fragcnt = 1;
+	fpinfo->csv_delim = ',';
+	fpinfo->csv_quote = '"';
+	fpinfo->csv_escape = '"';
+	fpinfo->csv_nullstr = 0;
+	fpinfo->csv_header = false;
 
 	apply_server_options(fpinfo);
 	apply_table_options(fpinfo);
@@ -564,6 +572,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 	bool has_final_sort = false;
 	bool has_limit = false;
 	ListCell *lc;
+	kite_filespec_t *fspec;
 
 	/*
 	 * Get FDW private data created by postgresGetForeignUpperPaths(), if any.
@@ -738,6 +747,27 @@ postgresGetForeignPlan(PlannerInfo *root,
 	}
 
 	/*
+	 * build filespec for KITE
+	 */
+	fspec = (kite_filespec_t*) palloc0(sizeof(kite_filespec_t));
+	if (! fpinfo->fmt) {
+		elog(ERROR, "table option fmt is not specified");
+	}
+
+	strcpy(fspec->fmt, fpinfo->fmt);
+	fspec->u.csv.delim = fpinfo->csv_delim;
+	fspec->u.csv.quote = fpinfo->csv_quote;
+	fspec->u.csv.escape = fpinfo->csv_escape;
+	if (fpinfo->csv_nullstr) {
+		strcpy(fspec->u.csv.nullstr, fpinfo->csv_nullstr);
+	} else {
+		*fspec->u.csv.nullstr = 0;
+	}
+	fspec->u.csv.header_line = fpinfo->csv_header;
+
+
+
+	/*
 	 * Build the fdw_private list that will be available to the executor.
 	 * Items in the list must match order in enum FdwScanPrivateIndex.
 	 */
@@ -746,6 +776,8 @@ postgresGetForeignPlan(PlannerInfo *root,
 		retrieved_attrs,
 		makeInteger(fpinfo->fetch_size),
 		makeInteger(fpinfo->fragcnt));
+
+	fdw_private = lappend(fdw_private, fspec);
 
 	if (IS_JOIN_REL(foreignrel) || IS_UPPER_REL(foreignrel)) {
 		fdw_private = lappend(fdw_private,
@@ -888,6 +920,7 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags) {
 		FdwScanPrivateFetchSize));
 	fsstate->fragcnt = intVal(list_nth(fsplan->fdw_private,
 		FdwScanPrivateFragCnt));
+	fsstate->fspec = (kite_filespec_t *)list_nth(fsplan->fdw_private, FdwScanPrivateFileSpec);
 
 	/* Create contexts for batches of tuples and per-tuple temp workspace. */
 	fsstate->batch_cxt = AllocSetContextCreate(estate->es_query_cxt,
@@ -1610,7 +1643,7 @@ create_cursor(ForeignScanState *node) {
 	}
 
 	/* kite_submit */
-	req->hdl = kite_submit(req->host, fsstate->schema, fsstate->query, -1, fsstate->fragcnt, errmsg, sizeof(errmsg));
+	req->hdl = kite_submit(req->host, fsstate->schema, fsstate->query, -1, fsstate->fragcnt, fsstate->fspec, errmsg, sizeof(errmsg));
 	if (!req->hdl) {
 		elog(ERROR, "kite_submit failed");
 		return;
@@ -1914,6 +1947,18 @@ apply_table_options(PgFdwRelationInfo *fpinfo) {
 			(void)parse_int(defGetString(def), &fpinfo->fetch_size, 0, NULL);
 		else if (strcmp(def->defname, "async_capable") == 0)
 			fpinfo->async_capable = defGetBoolean(def);
+		else if (strcmp(def->defname, "fmt") == 0)
+			fpinfo->fmt = defGetString(def);
+		else if (strcmp(def->defname, "csv_delimiter") == 0)
+			fpinfo->csv_delim = *defGetString(def);
+		else if (strcmp(def->defname, "csv_quote") == 0)
+			fpinfo->csv_quote = *defGetString(def);
+		else if (strcmp(def->defname, "csv_escape") == 0)
+			fpinfo->csv_escape = *defGetString(def);
+		else if (strcmp(def->defname, "csv_nullstr") == 0)
+			fpinfo->csv_nullstr = defGetString(def);
+		else if (strcmp(def->defname, "csv_header") == 0)
+			fpinfo->csv_header = defGetBoolean(def);
 	}
 }
 
@@ -1972,6 +2017,13 @@ merge_fdw_options(PgFdwRelationInfo *fpinfo,
 
 		/* KITE */
 		fpinfo->fragcnt = Max(fpinfo_o->fragcnt, fpinfo_i->fragcnt);
+		fpinfo->fmt = fpinfo_o->fmt ? fpinfo_o->fmt : fpinfo_i->fmt;
+		fpinfo->csv_delim = fpinfo_o->csv_delim ? fpinfo_o->csv_delim : fpinfo_i->csv_delim;
+		fpinfo->csv_escape = fpinfo_o->csv_escape ? fpinfo_o->csv_escape : fpinfo_i->csv_escape;
+		fpinfo->csv_quote = fpinfo_o->csv_quote ? fpinfo_o->csv_quote: fpinfo_i->csv_quote;
+		fpinfo->csv_nullstr = fpinfo_o->csv_nullstr ? fpinfo_o->csv_nullstr : fpinfo_i->csv_nullstr;
+		fpinfo->csv_header = fpinfo_o->csv_header || fpinfo_i->csv_header;
+
 
 		/*
 		 * We'll prefer to consider this join async-capable if any table from
@@ -2978,7 +3030,8 @@ find_em_for_rel_target(PlannerInfo *root, EquivalenceClass *ec,
 	return NULL;
 }
 
-static bool kite_get_relation_stats(PgFdwRelationInfo *fpinfo, Relation relation, BlockNumber *totalpages, double *totalrows) {
+static bool kite_get_relation_stats(PgFdwRelationInfo *fpinfo, Relation relation, kite_filespec_t *fspec,
+		BlockNumber *totalpages, double *totalrows) {
 	char errmsg[1024];
 	ForeignTable *table;
 	UserMapping *user;
@@ -3017,7 +3070,7 @@ static bool kite_get_relation_stats(PgFdwRelationInfo *fpinfo, Relation relation
 	}
 	//elog(LOG, "scheam %s", schema.data);
 
-	req->hdl = kite_submit(req->host, schema.data, sql.data, -1, fpinfo->fragcnt, errmsg, sizeof(errmsg));
+	req->hdl = kite_submit(req->host, schema.data, sql.data, -1, fpinfo->fragcnt, fspec, errmsg, sizeof(errmsg));
 	if (!req->hdl) {
 		elog(ERROR, "kite_submit failed -- %s", errmsg);
 		return false;
@@ -3108,6 +3161,7 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 	xrg_iter_t *iter = 0;
 	int e = 0;
 	MemoryContext oldcontext;
+	kite_filespec_t *fspec;
 
 	astate.rel = relation;
 	astate.attinmeta = TupleDescGetAttInMetadata(RelationGetDescr(relation));
@@ -3122,10 +3176,35 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 	fpinfo->server = GetForeignServer(fpinfo->table->serverid);
 
 	fpinfo->fragcnt = 1;
+	fpinfo->csv_delim = ',';
+	fpinfo->csv_quote = '"';
+	fpinfo->csv_escape = '"';
+	fpinfo->csv_nullstr = 0;
+	fpinfo->csv_header = false;
 	apply_server_options(fpinfo);
 	apply_table_options(fpinfo);
 
-	if (!kite_get_relation_stats(fpinfo, relation, &totalpages, &astate.samplerows)) {
+        /*
+         * build filespec for KITE
+         */
+        fspec = (kite_filespec_t*) palloc0(sizeof(kite_filespec_t));
+        if (! fpinfo->fmt) {
+                elog(ERROR, "table option fmt is not specified");
+        }
+
+        strcpy(fspec->fmt, fpinfo->fmt);
+        fspec->u.csv.delim = fpinfo->csv_delim;
+        fspec->u.csv.quote = fpinfo->csv_quote;
+        fspec->u.csv.escape = fpinfo->csv_escape;
+        if (fpinfo->csv_nullstr) {
+                strcpy(fspec->u.csv.nullstr, fpinfo->csv_nullstr);
+        } else {
+                *fspec->u.csv.nullstr = 0;
+        }
+        fspec->u.csv.header_line = fpinfo->csv_header;
+
+
+	if (!kite_get_relation_stats(fpinfo, relation, fspec, &totalpages, &astate.samplerows)) {
 		elog(ERROR, "kite_Get_relation_stats failed");
 		return 0;
 	}
@@ -3160,7 +3239,7 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 		kite_build_schema(&schema, tupdesc);
 	}
 
-	req->hdl = kite_submit(req->host, schema.data, sql.data, -1, fpinfo->fragcnt, errormsg, sizeof(errormsg));
+	req->hdl = kite_submit(req->host, schema.data, sql.data, -1, fpinfo->fragcnt, fspec, errormsg, sizeof(errormsg));
 	if (!req->hdl) {
 		elog(ERROR, "kite_submit failed -- %s", errormsg);
 		return 0;

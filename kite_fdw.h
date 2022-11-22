@@ -95,6 +95,13 @@ typedef struct PgFdwRelationInfo
 	int			fetch_size;		/* fetch size for this remote table */
 
 	int                     fragcnt; /* number of fragment in kite */
+	char            *fmt;  /* source format such as csv, parquet */
+	char            csv_delim; /* csv delimiter */
+	char            csv_quote; /* csv quote */
+	char            csv_escape; /* csv escape */
+	bool            csv_header; /* csv header boolean */
+	char            *csv_nullstr; /* csv NULL string */
+
 
 	/*
 	 * Name of the relation, for use while EXPLAINing ForeignScan.  It is used

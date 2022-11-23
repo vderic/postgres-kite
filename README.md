@@ -81,7 +81,7 @@ CREATE FOREIGN TABLE warehouse
 		warehouse_created timestamp
 	)
 	SERVER kite_server
-	OPTIONS (schema_name 'public', table_name 'warehouse*');
+	OPTIONS (schema_name 'public', table_name 'warehouse*', fmt 'csv', csv_delimiter '|', csv_quote '"', csv_escape '"', csv_header 'false', csv_nullstr '');
 
 -- select from table
 SELECT * FROM warehouse ORDER BY 1;

@@ -50,6 +50,12 @@ The following parameters can be set on a Kite foreign table object:
   * `table_name`: Name of the Postgres table, default is the same as
     foreign table.
   * `fetch_size`: Same as `fetch_size` parameter for foreign server.
+  * `fmt`: data format. csv and parquet are supported.
+  * `csv_delimiter`: csv delimiter. Default is ','.
+  * `csv_quote`: csv quote. Default is '"'.
+  * `csv_escape`: csv escape character. Default is '"'.
+  * `csv_header`: csv file with header line. Default is false.
+  * `csv_nullstr`: csv NULL string. Default is empty string.
 
 The following parameters need to supplied while creating user mapping.
 

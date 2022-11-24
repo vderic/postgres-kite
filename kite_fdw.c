@@ -1,12 +1,12 @@
 /*-------------------------------------------------------------------------
  *
- * postgres_fdw.c
- *		  Foreign-data wrapper for remote PostgreSQL servers
+ * kite_fdw.c
+ *		  Foreign-data wrapper for remote Kite servers
  *
- * Portions Copyright (c) 2012-2022, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-2022, Vitessedata Inc.
  *
  * IDENTIFICATION
- *		  contrib/postgres_fdw/postgres_fdw.c
+ *		  contrib/kite_fdw/kite_fdw.c
  *
  *-------------------------------------------------------------------------
  */
@@ -104,7 +104,7 @@ enum FdwScanPrivateIndex {
 };
 
 /*
- * Execution state of a foreign scan using postgres_fdw.
+ * Execution state of a foreign scan using kite_fdw.
  */
 typedef struct PgFdwScanState {
 	Relation rel;			  /* relcache entry for the foreign table. NULL
@@ -217,31 +217,31 @@ PG_FUNCTION_INFO_V1(kite_fdw_handler);
 /*
  * FDW callback routines
  */
-static void postgresGetForeignRelSize(PlannerInfo *root,
+static void kiteGetForeignRelSize(PlannerInfo *root,
 	RelOptInfo *baserel,
 	Oid foreigntableid);
-static void postgresGetForeignPaths(PlannerInfo *root,
+static void kiteGetForeignPaths(PlannerInfo *root,
 	RelOptInfo *baserel,
 	Oid foreigntableid);
-static ForeignScan *postgresGetForeignPlan(PlannerInfo *root,
+static ForeignScan *kiteGetForeignPlan(PlannerInfo *root,
 	RelOptInfo *foreignrel,
 	Oid foreigntableid,
 	ForeignPath *best_path,
 	List *tlist,
 	List *scan_clauses,
 	Plan *outer_plan);
-static void postgresBeginForeignScan(ForeignScanState *node, int eflags);
-static TupleTableSlot *postgresIterateForeignScan(ForeignScanState *node);
-static void postgresReScanForeignScan(ForeignScanState *node);
-static void postgresEndForeignScan(ForeignScanState *node);
+static void kiteBeginForeignScan(ForeignScanState *node, int eflags);
+static TupleTableSlot *kiteIterateForeignScan(ForeignScanState *node);
+static void kiteReScanForeignScan(ForeignScanState *node);
+static void kiteEndForeignScan(ForeignScanState *node);
 
-static void postgresGetForeignUpperPaths(PlannerInfo *root,
+static void kiteGetForeignUpperPaths(PlannerInfo *root,
 	UpperRelationKind stage,
 	RelOptInfo *input_rel,
 	RelOptInfo *output_rel,
 	void *extra);
 
-static bool postgresAnalyzeForeignTable(Relation relation,
+static bool kiteAnalyzeForeignTable(Relation relation,
 	AcquireSampleRowsFunc *func,
 	BlockNumber *totalpages);
 
@@ -310,7 +310,7 @@ static void merge_fdw_options(PgFdwRelationInfo *fpinfo,
 	const PgFdwRelationInfo *fpinfo_o,
 	const PgFdwRelationInfo *fpinfo_i);
 
-static int postgresAcquireSampleRowsFunc(Relation relation, int elevel,
+static int kiteAcquireSampleRowsFunc(Relation relation, int elevel,
 	HeapTuple *rows, int targrows,
 	double *totalrows,
 	double *totaldeadrows);
@@ -323,32 +323,32 @@ Datum kite_fdw_handler(PG_FUNCTION_ARGS) {
 	FdwRoutine *routine = makeNode(FdwRoutine);
 
 	/* Functions for scanning foreign tables */
-	routine->GetForeignRelSize = postgresGetForeignRelSize;
-	routine->GetForeignPaths = postgresGetForeignPaths;
-	routine->GetForeignPlan = postgresGetForeignPlan;
-	routine->BeginForeignScan = postgresBeginForeignScan;
-	routine->IterateForeignScan = postgresIterateForeignScan;
-	routine->ReScanForeignScan = postgresReScanForeignScan;
-	routine->EndForeignScan = postgresEndForeignScan;
+	routine->GetForeignRelSize = kiteGetForeignRelSize;
+	routine->GetForeignPaths = kiteGetForeignPaths;
+	routine->GetForeignPlan = kiteGetForeignPlan;
+	routine->BeginForeignScan = kiteBeginForeignScan;
+	routine->IterateForeignScan = kiteIterateForeignScan;
+	routine->ReScanForeignScan = kiteReScanForeignScan;
+	routine->EndForeignScan = kiteEndForeignScan;
 
 	/* Support functions for upper relation push-down */
-	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
+	routine->GetForeignUpperPaths = kiteGetForeignUpperPaths;
 
 	/* Support functions for analyze foreign tables */
-	routine->AnalyzeForeignTable = postgresAnalyzeForeignTable;
+	routine->AnalyzeForeignTable = kiteAnalyzeForeignTable;
 
 	PG_RETURN_POINTER(routine);
 }
 
 /*
- * postgresGetForeignRelSize
+ * kiteGetForeignRelSize
  *		Estimate # of rows and width of the result of the scan
  *
  * We should consider the effect of all baserestrictinfo clauses here, but
  * not any join clauses.
  */
 static void
-postgresGetForeignRelSize(PlannerInfo *root,
+kiteGetForeignRelSize(PlannerInfo *root,
 	RelOptInfo *baserel,
 	Oid foreigntableid) {
 	PgFdwRelationInfo *fpinfo;
@@ -512,11 +512,11 @@ postgresGetForeignRelSize(PlannerInfo *root,
 }
 
 /*
- * postgresGetForeignPaths
+ * kiteGetForeignPaths
  *		Create possible scan paths for a scan on the foreign table
  */
 static void
-postgresGetForeignPaths(PlannerInfo *root,
+kiteGetForeignPaths(PlannerInfo *root,
 	RelOptInfo *baserel,
 	Oid foreigntableid) {
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *)baserel->fdw_private;
@@ -545,11 +545,11 @@ postgresGetForeignPaths(PlannerInfo *root,
 }
 
 /*
- * postgresGetForeignPlan
+ * kiteGetForeignPlan
  *		Create ForeignScan plan node which implements selected best path
  */
 static ForeignScan *
-postgresGetForeignPlan(PlannerInfo *root,
+kiteGetForeignPlan(PlannerInfo *root,
 	RelOptInfo *foreignrel,
 	Oid foreigntableid,
 	ForeignPath *best_path,
@@ -575,7 +575,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 	kite_filespec_t *fspec;
 
 	/*
-	 * Get FDW private data created by postgresGetForeignUpperPaths(), if any.
+	 * Get FDW private data created by kiteGetForeignUpperPaths(), if any.
 	 */
 	if (best_path->fdw_private) {
 		has_final_sort = boolVal(list_nth(best_path->fdw_private,
@@ -601,7 +601,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 		 * to check for remote-safety.
 		 *
 		 * Note: the join clauses we see here should be the exact same ones
-		 * previously examined by postgresGetForeignPaths.  Possibly it'd be
+		 * previously examined by kiteGetForeignPaths.  Possibly it'd be
 		 * worth passing forward the classification work done then, rather
 		 * than repeating it here.
 		 *
@@ -654,7 +654,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 		/*
 		 * We leave fdw_recheck_quals empty in this case, since we never need
 		 * to apply EPQ recheck clauses.  In the case of a joinrel, EPQ
-		 * recheck is handled elsewhere --- see postgresGetForeignJoinPaths().
+		 * recheck is handled elsewhere --- see kiteGetForeignJoinPaths().
 		 * If we're planning an upperrel (ie, remote grouping or aggregation)
 		 * then there's no EPQ to do because SELECT FOR UPDATE wouldn't be
 		 * allowed, and indeed we *can't* put the remote clauses into
@@ -730,7 +730,7 @@ postgresGetForeignPlan(PlannerInfo *root,
 		&retrieved_groupby_attrs);
 
 	//elog(LOG, "FINAL SQL: %s", sql.data);
-	/* Remember remote_exprs for possible use by postgresPlanDirectModify */
+	/* Remember remote_exprs for possible use by kitePlanDirectModify */
 	fpinfo->final_remote_exprs = remote_exprs;
 
 	/*
@@ -860,11 +860,11 @@ get_tupdesc_for_join_scan_tuples(ForeignScanState *node) {
 }
 
 /*
- * postgresBeginForeignScan
+ * kiteBeginForeignScan
  *		Initiate an executor scan of a foreign PostgreSQL table.
  */
 static void
-postgresBeginForeignScan(ForeignScanState *node, int eflags) {
+kiteBeginForeignScan(ForeignScanState *node, int eflags) {
 	ForeignScan *fsplan = (ForeignScan *)node->ss.ps.plan;
 	EState *estate = node->ss.ps.state;
 	PgFdwScanState *fsstate;
@@ -924,10 +924,10 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags) {
 
 	/* Create contexts for batches of tuples and per-tuple temp workspace. */
 	fsstate->batch_cxt = AllocSetContextCreate(estate->es_query_cxt,
-		"postgres_fdw tuple data",
+		"kite_fdw tuple data",
 		ALLOCSET_DEFAULT_SIZES);
 	fsstate->temp_cxt = AllocSetContextCreate(estate->es_query_cxt,
-		"postgres_fdw temporary data",
+		"kite_fdw temporary data",
 		ALLOCSET_SMALL_SIZES);
 
 	if (list_length(fsplan->fdw_private) >= FdwScanPrivateRetrievedAggfnoids + 1) {
@@ -993,12 +993,12 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags) {
 }
 
 /*
- * postgresIterateForeignScan
+ * kiteIterateForeignScan
  *		Retrieve next row from the result set, or clear tuple slot to indicate
  *		EOF.
  */
 static TupleTableSlot *
-postgresIterateForeignScan(ForeignScanState *node) {
+kiteIterateForeignScan(ForeignScanState *node) {
 	PgFdwScanState *fsstate = (PgFdwScanState *)node->fdw_state;
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
 
@@ -1037,21 +1037,21 @@ postgresIterateForeignScan(ForeignScanState *node) {
 }
 
 /*
- * postgresReScanForeignScan
+ * kiteReScanForeignScan
  *		Restart the scan.
  */
 static void
-postgresReScanForeignScan(ForeignScanState *node) {
+kiteReScanForeignScan(ForeignScanState *node) {
 	/* KITE already disable Param so ReScan do nothing even Postgres get this function */
 	return;
 }
 
 /*
- * postgresEndForeignScan
+ * kiteEndForeignScan
  *		Finish scanning foreign table and dispose objects used for this scan
  */
 static void
-postgresEndForeignScan(ForeignScanState *node) {
+kiteEndForeignScan(ForeignScanState *node) {
 	PgFdwScanState *fsstate = (PgFdwScanState *)node->fdw_state;
 
 	/* if fsstate is NULL, we are in EXPLAIN; nothing to do */
@@ -1850,7 +1850,7 @@ prepare_query_params(PlanState *node,
 	 * practice, we expect that all these expressions will be just Params, so
 	 * we could possibly do something more efficient than using the full
 	 * expression-eval machinery for this.  But probably there would be little
-	 * benefit, and it'd require postgres_fdw to know more than is desirable
+	 * benefit, and it'd require kite_fdw to know more than is desirable
 	 * about Param evaluation.)
 	 */
 	*param_exprs = ExecInitExprList(fdw_exprs, node);
@@ -2264,7 +2264,7 @@ foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
 	 * Set the string describing this grouped relation to be used in EXPLAIN
 	 * output of corresponding ForeignScan.  Note that the decoration we add
 	 * to the base relation name mustn't include any digits, or it'll confuse
-	 * postgresExplainForeignScan.
+	 * kiteExplainForeignScan.
 	 */
 	fpinfo->relation_name = psprintf("Aggregate on (%s)",
 		ofpinfo->relation_name);
@@ -2273,12 +2273,12 @@ foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
 }
 
 /*
- * postgresGetForeignUpperPaths
+ * kiteGetForeignUpperPaths
  *		Add paths for post-join operations like aggregation, grouping etc. if
  *		corresponding operations are safe to push down.
  */
 static void
-postgresGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
+kiteGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
 	RelOptInfo *input_rel, RelOptInfo *output_rel,
 	void *extra) {
 	PgFdwRelationInfo *fpinfo;
@@ -2371,8 +2371,8 @@ add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	 * Compute the selectivity and cost of the local_conds, so we don't have
 	 * to do it over again for each path.  (Currently we create just a single
 	 * path here, but in future it would be possible that we build more paths
-	 * such as pre-sorted paths as in postgresGetForeignPaths and
-	 * postgresGetForeignJoinPaths.)  The best we can do for these conditions
+	 * such as pre-sorted paths as in kiteGetForeignPaths and
+	 * kiteGetForeignJoinPaths.)  The best we can do for these conditions
 	 * is to estimate selectivity on the basis of local statistics.
 	 */
 	fpinfo->local_conds_sel = clauselist_selectivity(root,
@@ -2613,7 +2613,7 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 		ifpinfo->use_remote_estimate = save_use_remote_estimate;
 
 	/*
-	 * Build the fdw_private list that will be used by postgresGetForeignPlan.
+	 * Build the fdw_private list that will be used by kiteGetForeignPlan.
 	 * Items in the list must match order in enum FdwPathPrivateIndex.
 	 */
 	fdw_private = list_make2(makeBoolean(has_final_sort),
@@ -3113,18 +3113,18 @@ static bool kite_get_relation_stats(PgFdwRelationInfo *fpinfo, Relation relation
 }
 
 /*
- * postgresAnalyzeForeignTable
+ * kiteAnalyzeForeignTable
  *		Test whether analyzing this foreign table is supported
  */
 static bool
-postgresAnalyzeForeignTable(Relation relation,
+kiteAnalyzeForeignTable(Relation relation,
 	AcquireSampleRowsFunc *func,
 	BlockNumber *totalpages) {
 
 	double totalrows = 0;
 
 	/* Return the row-analysis function pointer */
-	*func = postgresAcquireSampleRowsFunc;
+	*func = kiteAcquireSampleRowsFunc;
 
 	//return kite_get_relation_stats(relation, totalpages, &totalrows);
 	// give fake number and get the stats in the later stage
@@ -3134,7 +3134,7 @@ postgresAnalyzeForeignTable(Relation relation,
 }
 
 /*
- * Acquire a random sample of rows from foreign table managed by postgres_fdw.
+ * Acquire a random sample of rows from foreign table managed by kite_fdw.
  *
  * We fetch the whole table from the remote side and pick out some sample rows.
  *
@@ -3150,7 +3150,7 @@ postgresAnalyzeForeignTable(Relation relation,
  * currently (the planner only pays attention to correlation for indexscans).
  */
 static int
-postgresAcquireSampleRowsFunc(Relation relation, int elevel,
+kiteAcquireSampleRowsFunc(Relation relation, int elevel,
 	HeapTuple *rows, int targrows,
 	double *totalrows,
 	double *totaldeadrows) {
@@ -3218,7 +3218,7 @@ postgresAcquireSampleRowsFunc(Relation relation, int elevel,
 	/* Remember ANALYZE context, and create a per-tuple temp context */
 	astate.anl_cxt = CurrentMemoryContext;
 	astate.temp_cxt = AllocSetContextCreate(CurrentMemoryContext,
-		"postgres_fdw temporary data",
+		"kite_fdw temporary data",
 		ALLOCSET_SMALL_SIZES);
 
 	/*

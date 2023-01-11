@@ -243,8 +243,8 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 	}
 }
 
-static int get_serialize_size(xrg_iter_t *iter) {
-
+static int hagg_reclen(void *context, const void *src) {
+	xrg_iter_t *iter = (xrg_iter_t *) src;
 	int sz = 0;
 
 	for (int i = 0 ; i < iter->nvec ; i++) {
@@ -258,21 +258,9 @@ static int get_serialize_size(xrg_iter_t *iter) {
 	return sz;
 }
 
-static int serialize(xrg_iter_t *iter, char **buf, int *buflen) {
-	char *p = 0;
-	int sz = get_serialize_size(iter);
-	if (!*buf) {
-		*buf = (char *) malloc(sz);
-		*buflen = sz;
-	}
-
-	if (*buf && sz > *buflen) {
-		int newsz = sz * 2;
-		*buf = (char *) realloc(*buf, newsz);
-		*buflen = newsz;
-	}
-
-	p = *buf;
+static void hagg_serialize(void *context, const void *src, void *dest, int destsz) {
+	xrg_iter_t *iter = (xrg_iter_t *) src;
+	char *p = dest;
 
 	for (int i = 0 ; i < iter->nvec ; i++) {
 		if (iter->attr[i].itemsz >= 0) {
@@ -284,8 +272,6 @@ static int serialize(xrg_iter_t *iter, char **buf, int *buflen) {
 			p += len;
 		}
 	}
-
-	return sz;
 }
 
 static void build_tlist(xrg_agg_t *agg) {
@@ -345,6 +331,7 @@ static void build_tlist(xrg_agg_t *agg) {
 xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_attrs) {
 
 	xrg_agg_t *agg = (xrg_agg_t*) malloc(sizeof(xrg_agg_t));
+	hagg_dispatch_t dispatch;
 	Assert(agg);
 
 	agg->reached_eof = false;
@@ -360,7 +347,14 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	Assert(aggfnoids);
 	agg->ncol = get_ncol_from_aggfnoids(aggfnoids);
 
-	agg->hagg = hagg_start(agg, LLONG_MAX, ".", hagg_keyeq, hagg_init, hagg_trans);
+	dispatch.keyeq = hagg_keyeq;
+	dispatch.init = hagg_init;
+	dispatch.trans = hagg_trans;
+	dispatch.reclen = hagg_reclen;
+	dispatch.serialize = hagg_serialize;
+	dispatch.reset = 0;
+
+	agg->hagg = hagg_start(agg, LLONG_MAX, ".", &dispatch);
 
 	return agg;
 }
@@ -415,8 +409,7 @@ static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter, char **buf, int *bu
 
 	}
 
-	len = serialize(iter, buf, buflen);
-	return hagg_feed(agg->hagg, hval, *buf, len);
+	return hagg_feed(agg->hagg, hval, iter);
 }
 
 int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {

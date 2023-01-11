@@ -377,7 +377,7 @@ void xrg_agg_destroy(xrg_agg_t *agg) {
 
 
 
-static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter, char **buf, int *buflen) {
+static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter) {
 	ListCell *lc;
 	int ret = 0;
 
@@ -414,8 +414,6 @@ static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter, char **buf, int *bu
 
 int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {
 	int ret = 0;
-	char *buf = 0;
-	int buflen = 0;
 	char errmsg[1024];
 	xrg_iter_t *iter;
 
@@ -431,7 +429,7 @@ int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {
 					break;
 				}
 
-				if ((ret = xrg_agg_process(agg, iter, &buf, &buflen)) != 0) {
+				if ((ret = xrg_agg_process(agg, iter)) != 0) {
 					break;
 				}
 			} else {
@@ -441,7 +439,6 @@ int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {
 		}
 	}
 
-	if (buf) free(buf);
 	return ret;
 }
 

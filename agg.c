@@ -31,7 +31,7 @@ static int get_ncol_from_aggfnoids(List *aggfnoids) {
 }
 
 
-static int hagg_keyeq(void *context, const void *rec1, const void *rec2) {
+static int hagg_keyeq(void *context, void *rec1, void *rec2) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	const char *p1, *p2;
 	int itemsz = 0;
@@ -110,7 +110,7 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 	return p;
 }
 
-static void *hagg_init(void *context, const void *rec) {
+static void *hagg_init(void *context, void *rec) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	ListCell *lc;
 	const char *p = rec;
@@ -148,7 +148,7 @@ static void *hagg_init(void *context, const void *rec) {
 	return translist;
 }
 
-static void *hagg_trans(void *context, const void *rec, void *data) {
+static void *hagg_trans(void *context, void *rec, void *data) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	void **translist = (void  **)data;
 	const char *p = rec;

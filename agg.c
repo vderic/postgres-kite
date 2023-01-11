@@ -5,6 +5,9 @@
 
 extern bool aggfnoid_is_avg(int aggfnoid);
 
+#define REC_DATA(x) ((char *) x + sizeof(int))
+#define REC_SIZE(x) (*((int*)x) + sizeof(int))
+
 static const char *column_next(xrg_attr_t *attr, const char *p) {
 	if (attr->itemsz > 0) {
 		p +=  attr->itemsz;
@@ -43,8 +46,8 @@ static int hagg_keyeq(void *context, const void *rec1, const void *rec2) {
 	}
 
 	ngrpby = list_length(agg->groupby_attrs);
-	p1 = rec1;
-	p2 = rec2;
+	p1 = REC_DATA(rec1);
+	p2 = REC_DATA(rec2);
 	for (int i = 0, n = 0 ; i < agg->ntlist && n < ngrpby ; i++) {
 
 		if (! agg->tlist[i].gbykey) {
@@ -113,7 +116,7 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 static void *hagg_init(void *context, const void *rec) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	ListCell *lc;
-	const char *p = rec;
+	const char *p = REC_DATA(rec);
 	int naggfnoid = list_length(agg->aggfnoids);
 	void ** translist = (void **) malloc(sizeof(void*) * naggfnoid);
 
@@ -151,7 +154,7 @@ static void *hagg_init(void *context, const void *rec) {
 static void *hagg_trans(void *context, const void *rec, void *data) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	void **translist = (void  **)data;
-	const char *p = rec;
+	const char *p = REC_DATA(rec);
 	xrg_attr_t *attr = agg->attr;
 
 	for (int i = 0 ; i < agg->ntlist ; i++) {
@@ -199,7 +202,7 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
        	Datum *datums, bool *flags, int ndatum) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	void **translist = (void  **)data;
-	const char *p = rec;
+	const char *p = REC_DATA(rec);
 	xrg_attr_t *attr = agg->attr;
 
 	for (int i = 0 ; i < agg->ntlist ; i++) {
@@ -243,6 +246,11 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 	}
 }
 
+static int hagg_reclen(void *context, const void *rec) {
+
+	return REC_SIZE(rec);
+}
+
 static int get_serialize_size(xrg_iter_t *iter) {
 
 	int sz = 0;
@@ -260,7 +268,8 @@ static int get_serialize_size(xrg_iter_t *iter) {
 
 static int serialize(xrg_iter_t *iter, char **buf, int *buflen) {
 	char *p = 0;
-	int sz = get_serialize_size(iter);
+	int datasz = get_serialize_size(iter);
+	int sz = datasz + sizeof(int);
 	if (!*buf) {
 		*buf = (char *) malloc(sz);
 		*buflen = sz;
@@ -273,6 +282,8 @@ static int serialize(xrg_iter_t *iter, char **buf, int *buflen) {
 	}
 
 	p = *buf;
+	memcpy(p, &datasz, sizeof(int));
+	p += sizeof(int);
 
 	for (int i = 0 ; i < iter->nvec ; i++) {
 		if (iter->attr[i].itemsz >= 0) {
@@ -345,6 +356,7 @@ static void build_tlist(xrg_agg_t *agg) {
 xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_attrs) {
 
 	xrg_agg_t *agg = (xrg_agg_t*) malloc(sizeof(xrg_agg_t));
+	hagg_dispatch_t dispatch = {0};
 	Assert(agg);
 
 	agg->reached_eof = false;
@@ -360,7 +372,12 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	Assert(aggfnoids);
 	agg->ncol = get_ncol_from_aggfnoids(aggfnoids);
 
-	agg->hagg = hagg_start(agg, LLONG_MAX, ".", hagg_keyeq, hagg_init, hagg_trans);
+	dispatch.keyeq = hagg_keyeq;
+	dispatch.init = hagg_init;
+	dispatch.trans = hagg_trans;
+	dispatch.reclen = hagg_reclen;
+
+	agg->hagg = hagg_start(agg, LLONG_MAX, ".", &dispatch);
 
 	return agg;
 }
@@ -416,7 +433,7 @@ static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter, char **buf, int *bu
 	}
 
 	len = serialize(iter, buf, buflen);
-	return hagg_feed(agg->hagg, hval, *buf, len);
+	return hagg_feed(agg->hagg, hval, *buf);
 }
 
 int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {

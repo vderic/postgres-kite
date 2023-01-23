@@ -106,7 +106,7 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, xrg_attr_t *attr2, i
 		}
 
 		p =  (char *) malloc(attr1->itemsz);
-		memset(p, 0, sizeof(attr1->itemsz));
+		memset(p, 0, attr1->itemsz);
 	}
 
 	return p;

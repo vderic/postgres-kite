@@ -86,8 +86,7 @@ static int hagg_keyeq(void *context, void *rec1, void *src2) {
 	return 1;
 }
 
-static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1, 
-		xrg_attr_t *attr2, const char *p2, int nattr) {
+static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, xrg_attr_t *attr2, int nattr) {
 
 	char *p = 0;
 	if (aggfnoid_is_avg(aggfn)) {
@@ -97,7 +96,7 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 			return 0;
 		}
 		avg = (avg_trans_t *) malloc(sizeof(avg_trans_t));
-		avg_trans_init(aggfn, avg, p1, attr1, p2, attr2);
+		memset(avg, 0, sizeof(avg_trans_t));
 		p = (void *) avg;
 
 	} else {
@@ -107,16 +106,15 @@ static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, const char *p1,
 		}
 
 		p =  (char *) malloc(attr1->itemsz);
-		memcpy(p, p1, attr1->itemsz);
+		memset(p, 0, sizeof(attr1->itemsz));
 	}
 
 	return p;
 }
 
-static void *hagg_init(void *context, void *rec) {
+static void *hagg_init(void *context) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	ListCell *lc;
-	const char *p = rec;
 	int naggfnoid = list_length(agg->aggfnoids);
 	void ** translist = (void **) malloc(sizeof(void*) * naggfnoid);
 
@@ -127,22 +125,17 @@ static void *hagg_init(void *context, void *rec) {
 		if (fn > 0) {
 			void *transdata =0;
 			if (aggfnoid_is_avg(fn)) {
-				const char *p1 = p;
 				xrg_attr_t *attr1 = attr++;
-				const char *p2 = column_next(attr1, p1);
 				xrg_attr_t *attr2 = attr++;
-				p = column_next(attr2, p2);
-				transdata = transdata_create(fn, attr1, p1, attr2, p2, 2);
+				transdata = transdata_create(fn, attr1, attr2, 2);
 				translist[i] = transdata;
 			} else {
-				transdata = transdata_create(fn, attr, p, 0, 0, 1);
+				transdata = transdata_create(fn, attr, 0, 1);
 				translist[i] = transdata;
-				p = column_next(attr, p);
 				attr++;
 			}
 		} else {
 			translist[i] = 0;
-			p = column_next(attr, p);
 			attr++;
 		}
 		i++;

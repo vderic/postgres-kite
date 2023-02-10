@@ -86,52 +86,69 @@ static int hagg_keyeq(void *context, void *rec1, void *src2) {
 	return 1;
 }
 
-static void *transdata_create(Oid aggfn, xrg_attr_t *attr1, xrg_attr_t *attr2, int nattr) {
+static int transdata_size(void *context) {
+	ListCell *lc;
+	xrg_agg_t *agg = (xrg_agg_t *) context;
+	int sz = sizeof(void*) * list_length(agg->aggfnoids);
 
-	char *p = 0;
-	if (aggfnoid_is_avg(aggfn)) {
-		avg_trans_t *avg = 0;
-		if (nattr != 2) {
-			elog(ERROR, "avg need 2 attributes sum and count");
-			return 0;
+	xrg_attr_t *attr = agg->attr;
+	foreach (lc, agg->aggfnoids) {
+		Oid fn = lfirst_oid(lc);
+		if (fn > 0) {
+			if (aggfnoid_is_avg(fn)) {
+				sz += sizeof(avg_trans_t);
+				attr += 2;
+			} else {
+				if (attr->itemsz < 0) {
+					elog(ERROR, "transdata_create: aggregate function does not support string");
+					return 0;
+				}
+				sz += attr->itemsz;
+				attr++;
+			}
+		} else {
+			attr++;
 		}
-		avg = (avg_trans_t *) malloc(sizeof(avg_trans_t));
-		memset(avg, 0, sizeof(avg_trans_t));
-		p = (void *) avg;
-
-	} else {
-		if (attr1->itemsz < 0) {
-			elog(ERROR, "transdata_create: aggregate function does not support string");
-			return 0;
-		}
-
-		p =  (char *) malloc(attr1->itemsz);
-		memset(p, 0, attr1->itemsz);
 	}
 
-	return p;
+	return sz;
 }
 
+
 static void *hagg_init(void *context) {
-	xrg_agg_t *agg = (xrg_agg_t *) context;
 	ListCell *lc;
-	int naggfnoid = list_length(agg->aggfnoids);
-	void ** translist = (void **) malloc(sizeof(void*) * naggfnoid);
+	char *transdata = 0, *p = 0; 
+	void **translist = 0;
+	xrg_agg_t *agg = (xrg_agg_t *) context;
+	int transsz = transdata_size(context);
+
+	if (transsz == 0) {
+		elog(ERROR, "transdata size is 0");
+		return 0;
+	}
+
+	p = transdata = calloc(transsz, 1);
+	if (transdata == 0) {
+		elog(ERROR, "transdata_create: out of memory");
+		return 0;
+	}
+
+	translist = (void **) transdata;
+
+	p += sizeof(void*) * list_length(agg->aggfnoids);
 
 	int i = 0;
 	xrg_attr_t *attr = agg->attr;
 	foreach (lc, agg->aggfnoids) {
 		Oid fn = lfirst_oid(lc);
 		if (fn > 0) {
-			void *transdata =0;
 			if (aggfnoid_is_avg(fn)) {
-				xrg_attr_t *attr1 = attr++;
-				xrg_attr_t *attr2 = attr++;
-				transdata = transdata_create(fn, attr1, attr2, 2);
-				translist[i] = transdata;
+				attr += 2;
+				translist[i] = p;
+				p += sizeof(avg_trans_t);
 			} else {
-				transdata = transdata_create(fn, attr, 0, 1);
-				translist[i] = transdata;
+				translist[i] = p;
+				p += attr->itemsz;
 				attr++;
 			}
 		} else {
@@ -141,7 +158,7 @@ static void *hagg_init(void *context) {
 		i++;
 	}
 
-	return translist;
+	return transdata;
 }
 
 static void *hagg_trans(void *context, void *rec, void *data) {
@@ -233,11 +250,6 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 	}
 
 	if (translist) {
-		for (int i = 0 ; i < agg->ntlist ; i++) {
-			if (translist[i]) {
-				free(translist[i]);
-			}
-		}
 		free(translist);
 	}
 }

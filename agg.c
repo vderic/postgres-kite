@@ -355,6 +355,7 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	build_tlist(agg);
 
 	memset(&agg->agg_iter, 0, sizeof(agg->agg_iter));
+	agg->agg_iter.top = -1;
 
 	Assert(aggfnoids);
 	agg->ncol = get_ncol_from_aggfnoids(aggfnoids);
@@ -460,7 +461,7 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 	void *rec = 0;
 	void *data = 0;
 
-	if (agg->agg_iter.top == 0 && hagg_iter_init(agg->hagg, &agg->agg_iter) != 0) {
+	if (agg->agg_iter.top == -1 && hagg_iter_init(agg->hagg, &agg->agg_iter) != 0) {
 		elog(ERROR, "hagg_iter_init failed");
 		return 0;
 	}

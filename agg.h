@@ -24,6 +24,7 @@ struct xrg_agg_t {
 	int batchid;
 	hagg_t *hagg;
 	hagg_iter_t agg_iter;
+	int64_t aggdata_memusage;
 
 	List *groupby_attrs;
 	List *aggfnoids;

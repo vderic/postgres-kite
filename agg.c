@@ -351,9 +351,10 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	agg->aggfnoids = aggfnoids;
 	agg->groupby_attrs = groupby_attrs;
 	agg->batchid = 0;
+	agg->aggdata_memusage = 0;
 	build_tlist(agg);
 
-	memset(&agg->agg_iter, 0, sizeof(hagg_iter_t));
+	memset(&agg->agg_iter, 0, sizeof(agg->agg_iter));
 
 	Assert(aggfnoids);
 	agg->ncol = get_ncol_from_aggfnoids(aggfnoids);
@@ -365,7 +366,7 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	dispatch.serialize = hagg_serialize;
 	dispatch.reset = 0;
 
-	agg->hagg = hagg_start(agg, LLONG_MAX, ".", &dispatch);
+	agg->hagg = hagg_start(agg, LLONG_MAX, &agg->aggdata_memusage, ".", &dispatch);
 
 	return agg;
 }
@@ -420,7 +421,7 @@ static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter) {
 
 	}
 
-	return hagg_feed(agg->hagg, hval, iter);
+	return hagg_feed(agg->hagg, hval, iter, -1);
 }
 
 int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {
@@ -456,26 +457,23 @@ int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {
 
 int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bool *flags, int n) {
 
-	const void *rec = 0;
+	void *rec = 0;
 	void *data = 0;
-	int max = hagg_batch_max(agg->hagg);
 
-	// obtain and process the batch
-	while (agg->batchid < max) {
-		if (! agg->agg_iter.tab) {
-			hagg_process_batch(agg->hagg, agg->batchid, &agg->agg_iter);
-		}
-	
-		hagg_next(&agg->agg_iter, &rec, &data);
+	if (agg->agg_iter.top == 0 && hagg_iter_init(agg->hagg, &agg->agg_iter) != 0) {
+		elog(ERROR, "hagg_iter_init failed");
+		return 0;
+	}
+
+	for (;;) {
+		char errmsg[1025];
+		hagg_iter_next(&agg->agg_iter, &rec, &data, errmsg, sizeof(errmsg));
 		if (rec == 0) {
-			memset(&agg->agg_iter, 0, sizeof(hagg_iter_t));
-			agg->batchid++;
-			continue;
+			break;
 		}
-	
+
 		finalize(agg, rec, data, attinmeta, datums, flags, n);
 		return 0;
-
 	}
 
 	return 1;

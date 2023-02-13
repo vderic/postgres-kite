@@ -463,7 +463,7 @@ int xrg_agg_get_next(xrg_agg_t *agg, AttInMetadata *attinmeta, Datum *datums, bo
 
 	if (agg->agg_iter.top == -1 && hagg_iter_init(agg->hagg, &agg->agg_iter) != 0) {
 		elog(ERROR, "hagg_iter_init failed");
-		return 0;
+		return 1;
 	}
 
 	for (;;) {

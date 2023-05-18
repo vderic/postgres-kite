@@ -42,9 +42,9 @@ const char *xrg_typ_str(int16_t ptyp, int16_t ltyp) {
 
                 break;
         case XRG_PTYP_FP32:
-                return "fp32";
+                return "float";
         case XRG_PTYP_FP64:
-                return "fp64";
+                return "double";
         case XRG_PTYP_BYTEA:
                 switch (ltyp) {
                 case XRG_LTYP_STRING:

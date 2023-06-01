@@ -80,7 +80,7 @@ int avg_numeric_finalize(char *data, xrg_attr_t *attr, __int128_t *avg, int *pre
 		int p2 = count_digit(static_cast<uint64_t>(accum->count));
 		int s2 = 0;
 
-		auto [p3, s3] = dec_DIV_precision_scale(p1, s1, p2, p2);
+		auto [p3, s3] = dec_DIV_precision_scale(p1, s1, p2, s2);
 		count = count.IncreaseScaleBy(s1);
 		*ret = div_scalar(*sum, count, p3, s3);
 

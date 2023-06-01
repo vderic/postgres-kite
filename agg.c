@@ -365,6 +365,7 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	dispatch.reclen = hagg_reclen;
 	dispatch.serialize = hagg_serialize;
 	dispatch.reset = 0;
+	dispatch.checkstop = 0;
 
 	agg->hagg = hagg_start(agg, LLONG_MAX, &agg->aggdata_memusage, ".", &dispatch);
 

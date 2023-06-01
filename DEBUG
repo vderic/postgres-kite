@@ -1,0 +1,30 @@
+# Stop server
+pg_ctl -D /path/to/data stop -m fast
+# Launch postgres via gdb
+gdb --args postgres -D /path/to/data
+Now, in the GDB shell, use these commands to set up an environment:
+
+# We have scroll bars in the year 2012!
+set pagination off
+# Attach to both parent and child on fork
+set detach-on-fork off
+# Stop/resume all processes
+set schedule-multiple on
+
+# Usually don't care about these signals
+handle SIGUSR1 noprint nostop
+handle SIGUSR2 noprint nostop
+
+# Make GDB's expression evaluation work with most common Postgres Macros (works with Linux).
+# Per https://www.postgresql.org/message-id/20130731021434.GE19053@alap2.anarazel.de,
+# have many Postgres macros work if these are defined (useful for TOAST stuff,
+# varlena stuff, etc):
+macro define __builtin_offsetof(T, F) ((int) &(((T *) 0)->F))
+macro define __extension__
+
+# Ugly hack so we don't break on process exit
+python gdb.events.exited.connect(lambda x: [gdb.execute('inferior 1'), gdb.post_event(lambda: gdb.execute('continue'))])
+
+# Phew! Run it.
+run
+To get a list of processes, run info inferior. To switch to another process, run inferior NUM.

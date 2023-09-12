@@ -610,15 +610,17 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2100: // PG_PROC_avg_2100: /* avg int8 */
 	{
 		FmgrInfo flinfo;
-		char dst[MAX_DEC128_STRLEN];
 		if (accum->count == 0) {
-			strcpy(dst, "NaN");
-		} else {
-			__int128_t v = accum->sum.i128 / accum->count;
-			int precision = 38;
-			int scale = 0;
-			decimal128_to_string(v, precision, scale, dst, sizeof(dst));
+			*pg_datum = 0;
+			*pg_isnull = true;
+			break;
 		}
+
+		char dst[MAX_DEC128_STRLEN];
+		__int128_t v = accum->sum.i128 / accum->count;
+		int precision = 38;
+		int scale = 0;
+		decimal128_to_string(v, precision, scale, dst, sizeof(dst));
 		memset(&flinfo, 0, sizeof(FmgrInfo));
 		flinfo.fn_addr = numeric_in;
 		flinfo.fn_nargs = 3;
@@ -631,15 +633,17 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2102: // PG_PROC_avg_2102: /* avg int2 */
 	{
 		FmgrInfo flinfo;
-		char dst[MAX_DEC128_STRLEN];
 		if (accum->count == 0) {
-			strcpy(dst, "NaN");
-		} else {
-			int64_t v = accum->sum.i64 / accum->count;
-			int precision = 38;
-			int scale = 0;
-			decimal64_to_string(v, precision, scale, dst, sizeof(dst));
+			*pg_datum = 0;
+			*pg_isnull = true;
+			break;
 		}
+
+		char dst[MAX_DEC128_STRLEN];
+		int64_t v = accum->sum.i64 / accum->count;
+		int precision = 38;
+		int scale = 0;
+		decimal64_to_string(v, precision, scale, dst, sizeof(dst));
 		memset(&flinfo, 0, sizeof(FmgrInfo));
 		flinfo.fn_addr = numeric_in;
 		flinfo.fn_nargs = 3;
@@ -651,18 +655,18 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2103: // PG_PROC_avg_2103: /* avg numeric */
 	{
 		FmgrInfo flinfo;
-		char dst[MAX_DEC128_STRLEN];
-
 		if (accum->count == 0) {
-			strcpy(dst, "NaN");
-		} else {
-			int precision, scale;
-			__int128_t v = 0;
-			if (avg_numeric_finalize(data, attr, &v, &precision, &scale) != 0) {
-				elog(ERROR, "avg_numeric_finalize error");
-			}
-			decimal128_to_string(v, precision, scale, dst, sizeof(dst));
+			*pg_datum = 0;
+			*pg_isnull = true;
+			break;
 		}
+		char dst[MAX_DEC128_STRLEN];
+		int precision, scale;
+		__int128_t v = 0;
+		if (avg_numeric_finalize(data, attr, &v, &precision, &scale) != 0) {
+			elog(ERROR, "avg_numeric_finalize error");
+		}
+		decimal128_to_string(v, precision, scale, dst, sizeof(dst));
 		memset(&flinfo, 0, sizeof(FmgrInfo));
 		flinfo.fn_addr = numeric_in;
 		flinfo.fn_nargs = 3;
@@ -675,12 +679,12 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2104: // PG_PROC_avg_2104: /* avg float4 */
 	case 2105: // PG_PROC_avg_2105: /* avg float8 */
 	{
-		double avg = 0;
 		if (accum->count == 0) {
-			avg = nan("");
-		} else {
-			avg = accum->sum.fp64 / accum->count;
+			*pg_datum = 0;
+			*pg_isnull = true;
+			break;
 		}
+		double avg = accum->sum.fp64 / accum->count;
 		*pg_datum = Float8GetDatum(avg);
 		*pg_isnull = false;
 		break;

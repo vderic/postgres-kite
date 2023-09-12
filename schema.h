@@ -9,6 +9,7 @@ extern "C" {
 
 #include "postgres.h"
 #include "access/tupdesc.h"
+#include "lib/stringinfo.h"
 #include "xrg.h"
 
 /* json helper */

@@ -223,7 +223,8 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 		int k = tgt->pgattr;
 		void *transdata = translist[i];
 		Oid aggfn = tgt->aggfn;
-		int typmod = (attinmeta) ? attinmeta->atttypmods[k-1] : 0;
+		int atttypmod = (attinmeta) ? attinmeta->atttypmods[k-1] : 0;
+		Oid atttypid = (attinmeta) ? attinmeta->tupdesc->attrs[k-1].atttypid: 0;
 
 		// datums[k] =  value[i]
 		if (transdata) {
@@ -231,9 +232,9 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 			// finalize_aggregate();
 			if (aggfnoid_is_avg(aggfn)) {
 				//finalize_avg();
-				avg_decode(aggfn, transdata, 0, attr, typmod, &datums[k-1], &flags[k-1]);
+				avg_decode(aggfn, transdata, 0, attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
 			} else {
-				var_decode(transdata, 0, attr, typmod, &datums[k-1], &flags[k-1]);
+				var_decode(transdata, 0, attr, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
 			}
 
 			for (int j = 0 ; j < top ; j++) {
@@ -245,7 +246,7 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 			const char *p1 = p;
 			xrg_attr_t *attr1 = attr;
 			p = column_next(attr++, p);
-			var_decode((char *) p1, 0, attr1, typmod, &datums[k-1], &flags[k-1]);
+			var_decode((char *) p1, 0, attr1, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
 		}
 	}
 

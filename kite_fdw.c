@@ -2806,8 +2806,9 @@ make_tuple_from_result_row(xrg_iter_t *iter,
 	j = 0;
 	foreach (lc, retrieved_attrs) {
 		int i = lfirst_int(lc);
-		var_decode(iter->value[j], *iter->flag[j], &iter->attr[j], attinmeta->atttypmods[i - 1],
-			&values[i - 1], &nulls[i - 1]);
+		var_decode(iter->value[j], *iter->flag[j], &iter->attr[j], attinmeta->tupdesc->attrs[i - 1].atttypid,
+			attinmeta->atttypmods[i - 1],
+			&values[i - 1], &nulls[i - 1], true);
 		j++;
 	}
 

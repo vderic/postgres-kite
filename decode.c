@@ -5,8 +5,77 @@
 #include "utils/timestamp.h"
 #include "utils/numeric.h"
 #include "utils/fmgrprotos.h"
+#include "utils/array.h"
 
-#define POSTGRES_SUM_NUMERIC 1
+static size_t xrg_typ_size(int16_t ptyp) {
+	switch (ptyp) {
+	case XRG_PTYP_INT8:
+		return 1;
+	case XRG_PTYP_INT16:
+		return 2;
+	case XRG_PTYP_INT32:
+		return 4;
+	case XRG_PTYP_INT64:
+		return 8;
+	case XRG_PTYP_INT128:
+		return 16;
+	case XRG_PTYP_FP32:
+		return 4;
+	case XRG_PTYP_FP64:
+		return 8;
+	case XRG_PTYP_BYTEA:
+		return -1;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static Oid pg_array_to_element_oid(Oid t) {
+	static Oid basic_type[] = {BOOLOID,
+		INT2OID,
+		INT4OID,
+		INT8OID,
+		DATEOID,
+		TIMEOID,
+		TIMESTAMPOID,
+		TIMESTAMPTZOID,
+		FLOAT4OID,
+		FLOAT8OID,
+		CASHOID,
+		INTERVALOID,
+		NUMERICOID,
+		BPCHAROID, TEXTOID, VARCHAROID};
+
+	static Oid array_type[] = {1000, // BOOLARRAYOID
+		INT2ARRAYOID,
+		INT4ARRAYOID,
+		INT8ARRAYOID,
+		1182, // DATEARRAYOID
+		1183, // TIMEARRAYOID
+		1115, // TIMESTAMPARRAYOID
+		1185, // TIMESTAMPTZARRAYOID
+		FLOAT4ARRAYOID,
+		FLOAT8ARRAYOID,
+		791,  // CASHARRAYOID
+		1187, // INTERVALARRAYOID
+		1231, // NUMERICARRAYOID
+		1014, // BPCHARARRAY
+		TEXTARRAYOID,
+		1015 // VARCHARARRAY
+		};
+
+	int narraytypes = sizeof(array_type) / sizeof(Oid);
+
+	for (int i =  0 ; i < narraytypes ; i++) {
+		if (array_type[i] == t) {
+			return basic_type[i];
+		}
+	}
+
+	return InvalidOid;
+}
 
 static inline Datum decode_int16(char *data) {
 	int16_t *p = (int16_t *)data;
@@ -59,8 +128,321 @@ static Datum decode_timestamp(char *data) {
 	return Int64GetDatum(ts);
 }
 
+
+static Datum decode_dateav(xrg_array_header_t *arr, int sz, Oid atttypid, int atttypmod) {
+	int16_t ptyp = xrg_array_ptyp(arr);
+	int16_t ltyp = xrg_array_ltyp(arr);
+	int ndim = xrg_array_ndim(arr);
+	int ndims = (ndim == 0 ? 0 : *xrg_array_dims(arr));
+	char *p = xrg_array_data_ptr(arr);
+	int itemsz = xrg_typ_size(ptyp);
+	char *nullmap = xrg_array_nullbitmap(arr);
+
+	if (sz != xrg_array_size(arr)) {
+		elog(ERROR, "array size does not match with header length");
+	}
+	if (ltyp != XRG_LTYP_DATE) {
+		elog(ERROR, "dateav logical type is not date");
+	}
+	if (itemsz != sizeof(int32_t)) {
+		elog(ERROR, "date item size != 4");
+	}
+
+	// allocate aligned buffer
+	xrg_array_header_t *ret = (xrg_array_header_t *) palloc(sz);
+	memcpy(ret, arr, sz);
+	p = xrg_array_data_ptr(ret);
+	nullmap = xrg_array_nullbitmap(ret);
+
+	if (ndim == 0) {
+		ArrayType *pga = (ArrayType *) ret;
+		pga->elemtype = pg_array_to_element_oid(atttypid);
+		SET_VARSIZE(pga, sz);
+		return PointerGetDatum(pga);
+	}
+
+	for (int i = 0 ; i < ndims ; i++) {
+		if (!xrg_array_get_isnull(nullmap, i)) {
+			*((int32_t *)p) -= (POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE);
+			p += sizeof(int32_t);
+		}
+	}
+	ArrayType *pga = (ArrayType *) ret;
+	pga->elemtype = pg_array_to_element_oid(atttypid);
+	SET_VARSIZE(pga, sz);
+	return PointerGetDatum(pga);
+}
+
+static Datum decode_timestampav(xrg_array_header_t *arr, int sz, Oid atttypid, int atttypmod) {
+	Timestamp epoch_ts = SetEpochTimestamp();
+	int16_t ptyp = xrg_array_ptyp(arr);
+	int16_t ltyp = xrg_array_ltyp(arr);
+	int ndim = xrg_array_ndim(arr);
+	int ndims = (ndim == 0 ? 0 : *xrg_array_dims(arr));
+	char *p = xrg_array_data_ptr(arr);
+	int itemsz = xrg_typ_size(ptyp);
+	char *nullmap = xrg_array_nullbitmap(arr);
+
+	if (sz != xrg_array_size(arr)) {
+		elog(ERROR, "array size does not match with header length");
+	}
+	if (ltyp != XRG_LTYP_TIMESTAMP) {
+		elog(ERROR, "timestampav logical type is not timestamp");
+	}
+	if (itemsz != sizeof(int64_t)) {
+		elog(ERROR, "timestampav item size != 8");
+	}
+
+	// allocate aligned buffer
+	xrg_array_header_t *ret = (xrg_array_header_t *) palloc(sz);
+	memcpy(ret, arr, sz);
+	p = xrg_array_data_ptr(ret);
+	nullmap = xrg_array_nullbitmap(ret);
+
+	if (ndim == 0) {
+		ArrayType *pga = (ArrayType *) ret;
+		pga->elemtype = pg_array_to_element_oid(atttypid);
+		SET_VARSIZE(pga, sz);
+		return PointerGetDatum(pga);
+	}
+
+	for (int i = 0 ; i < ndims ; i++) {
+		if (!xrg_array_get_isnull(nullmap, i)) {
+			*((int64_t *)p) += epoch_ts;
+			p += sizeof(int64_t);
+		}
+	}
+	ArrayType *pga = (ArrayType *) ret;
+	pga->elemtype = pg_array_to_element_oid(atttypid);
+	SET_VARSIZE(pga, sz);
+	return PointerGetDatum(pga);
+}
+
+static inline int32_t pgva_pack(char *dst, const void *ptr, int32_t len)
+{
+	SET_VARSIZE(dst, len + 4);
+	memcpy(dst+4, ptr, len);
+	return len+4;
+}
+
+static Datum decode_stringav(xrg_array_header_t *arr, int sz, Oid atttypid, int atttypmod) {
+	int16_t ptyp = xrg_array_ptyp(arr);
+	int16_t ltyp = xrg_array_ltyp(arr);
+	int ndim = xrg_array_ndim(arr);
+	int ndims = (ndim == 0 ? 0 : *xrg_array_dims(arr));
+	char *p = xrg_array_data_ptr(arr);
+	int itemsz = xrg_typ_size(ptyp);
+	char *nullmap = xrg_array_nullbitmap(arr);
+
+	if (sz != xrg_array_size(arr)) {
+		elog(ERROR, "array size does not match with header length");
+	}
+	if (ltyp != XRG_LTYP_STRING) {
+		elog(ERROR, "stringav logical type is not String");
+	}
+	if (itemsz != -1) {
+		elog(ERROR, "stringav item size != -1");
+	}
+
+	if (ndim == 0) {
+		ArrayType *ret = (ArrayType *) arr;
+		ret->elemtype = pg_array_to_element_oid(atttypid);
+		SET_VARSIZE(ret, sz);
+		return PointerGetDatum(ret);
+	}
+
+	int total = 0;
+	for (int i = 0 ; i < ndims ; i++) {
+		if (!xrg_array_get_isnull(nullmap, i)) {
+			int len = xrg_bytea_len(p);
+			total += xrg_align(4, len+4);
+			p += len+4;
+		}
+	}
+
+	ArrayType *pga = 0;
+	if (xrg_array_hasnull(arr)) {
+		total += ARR_OVERHEAD_WITHNULLS(ndim, ndims);
+		pga = (ArrayType *) palloc(total);
+		memcpy(pga, arr, ARR_OVERHEAD_WITHNULLS(ndim, ndims));
+	} else {
+		total += ARR_OVERHEAD_NONULLS(ndim);
+		pga = (ArrayType *) palloc(total);
+		memcpy(pga, arr, ARR_OVERHEAD_NONULLS(ndim));
+	}
+
+	pga->elemtype = pg_array_to_element_oid(atttypid);
+	SET_VARSIZE(pga, total);
+
+	char *pgp = ARR_DATA_PTR(pga);
+	p = xrg_array_data_ptr(arr);
+
+	for (int i = 0 ; i < ndims ; i++) {
+		if (!xrg_array_get_isnull(nullmap, i)) {
+			int len = xrg_bytea_len(p);
+			const char *data = xrg_bytea_ptr(p);
+			pgp += xrg_align(4, pgva_pack(pgp, data, len));
+			p += len + 4;
+		}
+	}
+
+	return PointerGetDatum(pga);
+}
+
+static Datum decode_dec64av(xrg_array_header_t *arr, int sz, int precision, int scale, Oid atttypid, int atttypmod) {
+
+	ArrayType *ret = 0;
+	FmgrInfo flinfo;
+
+	int16_t ptyp = xrg_array_ptyp(arr);
+	int16_t ltyp = xrg_array_ltyp(arr);
+	int ndim = xrg_array_ndim(arr);
+	int ndims = (ndim == 0 ? 0 : *xrg_array_dims(arr));
+	char *p = xrg_array_data_ptr(arr);
+	int itemsz = xrg_typ_size(ptyp);
+	char dst[MAX_DEC128_STRLEN];
+	char *nullmap = xrg_array_nullbitmap(arr);
+
+	if (sz != xrg_array_size(arr)) {
+		elog(ERROR, "array size does not match with header length");
+	}
+
+	if (!(ltyp == XRG_LTYP_DECIMAL && ptyp == XRG_PTYP_INT64)) {
+		elog(ERROR, "dec64av ptyp or ltyp not match");
+	}
+
+	if (itemsz != sizeof(int64_t)) {
+		elog(ERROR, "dec64 is not 64 bit length");
+	}
+
+	StringInfoData str;
+	initStringInfo(&str);
+	appendStringInfoCharMacro(&str, '{');
+	for (int i = 0 ; i < ndims ; i++) {
+		if (i > 0) {
+			appendStringInfoCharMacro(&str, ',');
+		}
+		if (!xrg_array_get_isnull(nullmap, i)) {
+			int64_t v = *((int64_t *)p);
+			decimal64_to_string(v, precision, scale, dst, sizeof(dst));
+			appendStringInfoString(&str, dst);
+			p += sizeof(int64_t);
+		}
+	}
+	appendStringInfoCharMacro(&str, '}');
+
+	memset(&flinfo, 0, sizeof(FmgrInfo));
+	fmgr_info_cxt(fmgr_internal_function("array_in"), &flinfo, CurrentMemoryContext);
+	ret = (ArrayType *) InputFunctionCall(&flinfo, str.data, pg_array_to_element_oid(atttypid), atttypmod);
+	return PointerGetDatum(ret);
+}
+
+static Datum decode_dec128av(xrg_array_header_t *arr, int sz, int precision, int scale, Oid atttypid, int atttypmod) {
+
+	ArrayType *ret = 0;
+	FmgrInfo flinfo;
+
+	int16_t ptyp = xrg_array_ptyp(arr);
+	int16_t ltyp = xrg_array_ltyp(arr);
+	int ndim = xrg_array_ndim(arr);
+	int ndims = (ndim == 0 ? 0 : *xrg_array_dims(arr));
+	char *p = xrg_array_data_ptr(arr);
+	int itemsz = xrg_typ_size(ptyp);
+	char dst[MAX_DEC128_STRLEN];
+	char *nullmap = xrg_array_nullbitmap(arr);
+
+	if (sz != xrg_array_size(arr)) {
+		elog(ERROR, "array size does not match with header length");
+	}
+
+	if (!(ltyp == XRG_LTYP_DECIMAL && ptyp == XRG_PTYP_INT128)) {
+		elog(ERROR, "dec128av ptyp or ltyp not match");
+	}
+
+	if (itemsz != sizeof(__int128_t)) {
+		elog(ERROR, "dec128 is not 128 bit length");
+	}
+
+	StringInfoData str;
+	initStringInfo(&str);
+	appendStringInfoCharMacro(&str, '{');
+	for (int i = 0 ; i < ndims ; i++) {
+		if (i > 0) {
+			appendStringInfoCharMacro(&str, ',');
+		}
+		if (!xrg_array_get_isnull(nullmap, i)) {
+			__int128_t v = 0;
+			memcpy(&v, p, sizeof(__int128_t));
+			decimal128_to_string(v, precision, scale, dst, sizeof(dst));
+			appendStringInfoString(&str, dst);
+			p += sizeof(__int128_t);
+		} else {
+			appendStringInfoString(&str, "NULL");
+		}
+	}
+
+	appendStringInfoCharMacro(&str, '}');
+
+	memset(&flinfo, 0, sizeof(FmgrInfo));
+	fmgr_info_cxt(fmgr_internal_function("array_in"), &flinfo, CurrentMemoryContext);
+	ret = (ArrayType *) InputFunctionCall(&flinfo, str.data, pg_array_to_element_oid(atttypid), atttypmod);
+	return PointerGetDatum(ret);
+}
+
+static Datum decode_decimalav(xrg_array_header_t *arr, int sz, int precision, int scale, Oid atttypid, int atttypmod) {
+	int16_t ptyp = xrg_array_ptyp(arr);
+	int16_t ltyp = xrg_array_ltyp(arr);
+	int ndim = xrg_array_ndim(arr);
+
+	if (sz != xrg_array_size(arr)) {
+		elog(ERROR, "array size does not match with header length");
+	}
+
+	if (ltyp != XRG_LTYP_DECIMAL) {
+		elog(ERROR, "dec128av ptyp or ltyp not match");
+	}
+
+	if (ndim == 0) {
+		ArrayType *ret = (ArrayType *) palloc(sz);
+		memcpy(ret, arr, sz);
+		ret->elemtype = pg_array_to_element_oid(atttypid);
+		SET_VARSIZE(ret, sz);
+		return PointerGetDatum(ret);
+	}
+
+	switch (ptyp) {
+	case XRG_PTYP_INT64:
+		return decode_dec64av(arr, sz, precision, scale, atttypid, atttypmod);
+		break;
+	case XRG_PTYP_INT128:
+		return decode_dec128av(arr, sz, precision, scale, atttypid, atttypmod);
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+/*
+ * the xrg_vector memory buffer is not same alignment as the array so
+ * we have to allocate the required aligned buffer and return to postgres
+ */
+static Datum decode_defaultav(xrg_array_header_t *arr, int sz, Oid atttypid, int atttypmod) {
+	if (sz != xrg_array_size(arr)) {
+		elog(ERROR, "array size does not match with header length");
+	}
+
+	ArrayType *pga = (ArrayType *) arr;
+	pga->elemtype = pg_array_to_element_oid(atttypid);
+	SET_VARSIZE(pga, sz);
+	ArrayType *ret = (ArrayType *) palloc(sz);
+	memcpy(ret, pga, sz);
+
+	return PointerGetDatum(ret);
+}
+
 /* decode functions */
-int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg_datum, bool *pg_isnull) {
+int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttypmod, Datum *pg_datum, bool *pg_isnull, bool int128_to_numeric) {
 	int ltyp = attr->ltyp;
 	int ptyp = attr->ptyp;
 	int precision = attr->precision;
@@ -86,8 +468,8 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg
 			*pg_datum = decode_int64(data);
 		} break;
 		case XRG_PTYP_INT128: {
-		        // postgres needs numeric but gpdb needs int128
-#ifdef POSTGRES_SUM_NUMERIC
+		        // SIMPLE_AGG needs numeric and PARTIAL_AGG needs int128
+		if (int128_to_numeric) {
                 	FmgrInfo flinfo;
                 	__int128_t v = *((__int128_t *)data);
                 	char dst[MAX_DEC128_STRLEN];
@@ -99,10 +481,9 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg
                 	flinfo.fn_nargs = 3;
                 	flinfo.fn_strict = true;
                 	*pg_datum = InputFunctionCall(&flinfo, dst, 0, atttypmod);
-#else
+		} else {
 			*pg_datum = decode_int128(data);
-
-#endif
+		}
 		} break;
 		case XRG_PTYP_FP32: {
 			*pg_datum = decode_float(data);
@@ -134,6 +515,7 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg
 		return 0;
 	case XRG_LTYP_DECIMAL:
 	case XRG_LTYP_STRING:
+	case XRG_LTYP_ARRAY:
 		break;
 	default: {
 		elog(ERROR, "invalid xrg logical type %d", ltyp);
@@ -178,10 +560,49 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg
 		return 0;
 	}
 
+	// TODO: date, timestamp, numeric need further processing
+	if (ltyp == XRG_LTYP_ARRAY && ptyp == XRG_PTYP_BYTEA) {
+		xrg_array_header_t *ptr = (xrg_array_header_t *) xrg_bytea_ptr(data);
+		int sz = xrg_bytea_len(data);
+		//int16_t array_ptyp = xrg_array_ptyp(ptr);
+		int16_t array_ltyp = xrg_array_ltyp(ptr);
+		if (flag & XRG_FLAG_NULL) {
+			*pg_datum = 0;
+		} else {
+
+			switch (array_ltyp) {
+			case XRG_LTYP_DATE:
+			{
+				*pg_datum = decode_dateav(ptr, sz, atttypid, atttypmod);
+					break;
+			}
+			case XRG_LTYP_TIMESTAMP:
+			{
+				*pg_datum = decode_timestampav(ptr, sz, atttypid, atttypmod);
+				break;
+			}
+			case XRG_LTYP_STRING:
+			{
+				*pg_datum = decode_stringav(ptr, sz, atttypid, atttypmod);
+				break;
+			}
+			case XRG_LTYP_DECIMAL:
+			{
+				*pg_datum = decode_decimalav(ptr, sz, precision, scale, atttypid, atttypmod);
+				break;
+			}
+			default:
+				*pg_datum = decode_defaultav(ptr, sz, atttypid, atttypmod);
+				break;
+			}
+		}
+		return 0;
+	}
+
 	return 0;
 }
 
-int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, int atttypmod, Datum *pg_datum, bool *pg_isnull) {
+int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttypmod, Datum *pg_datum, bool *pg_isnull) {
 
 	avg_trans_t *accum = (avg_trans_t *)data;
 

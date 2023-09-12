@@ -3,64 +3,65 @@
 #include "catalog/pg_attribute.h"
 #include "catalog/pg_type_d.h"
 
-const char *xrg_typ_str(int16_t ptyp, int16_t ltyp) {
-        switch (ptyp) {
-        case XRG_PTYP_INT8:
-                return "int8";
-        case XRG_PTYP_INT16:
-                return "int16";
-        case XRG_PTYP_INT32:
-                switch (ltyp) {
-                case XRG_LTYP_DATE:
-                        return "date";
-                default:
-                        return "int32";
-                }
-                break;
-        case XRG_PTYP_INT64:
-                switch (ltyp) {
-                case XRG_LTYP_DECIMAL:
-                        return "decimal";
-                case XRG_LTYP_TIME:
-                        return "time";
-                case XRG_LTYP_TIMESTAMP:
-                        return "timestamp";
-                default:
-                        return "int64";
-                }
 
-                break;
-        case XRG_PTYP_INT128:
-                switch (ltyp) {
-                case XRG_LTYP_INTERVAL:
-                        return "interval";
-                case XRG_LTYP_DECIMAL:
-                        return "decimal";
-                default:
-                        return "int128";
-                }
+static const char *xrg_typ_str(int16_t ptyp, int16_t ltyp, bool is_array) {
+	switch (ptyp) {
+	case XRG_PTYP_INT8:
+		return is_array ? "int8[]" : "int8";
+	case XRG_PTYP_INT16:
+		return is_array ? "int16[]" : "int16";
+	case XRG_PTYP_INT32:
+		switch (ltyp) {
+		case XRG_LTYP_DATE:
+			return is_array ? "date[]" : "date";
+		default:
+			return is_array ? "int32[]" : "int32";
+		}
+		break;
+	case XRG_PTYP_INT64:
+		switch (ltyp) {
+		case XRG_LTYP_DECIMAL:
+			return is_array ? "decimal[]" : "decimal";
+		case XRG_LTYP_TIME:
+			return is_array ? "time[]" : "time";
+		case XRG_LTYP_TIMESTAMP:
+			return is_array ? "timestamp[]" : "timestamp";
+		default:
+			return is_array ? "int64[]" : "int64";
+		}
 
-                break;
-        case XRG_PTYP_FP32:
-                return "float";
-        case XRG_PTYP_FP64:
-                return "double";
-        case XRG_PTYP_BYTEA:
-                switch (ltyp) {
-                case XRG_LTYP_STRING:
-                        return "string";
-                default:
-                        return "bytea";
-                }
-                break;
-        default:
-                break;
-        }
+		break;
+	case XRG_PTYP_INT128:
+		switch (ltyp) {
+		case XRG_LTYP_INTERVAL:
+			return is_array ? "interval[]" : "interval";
+		case XRG_LTYP_DECIMAL:
+			return is_array ? "decimal[]" : "decimal";
+		default:
+			return is_array ? "int128[]" : "int128";
+		}
 
-        return "";
+		break;
+	case XRG_PTYP_FP32:
+		return is_array ? "float[]" : "float";
+	case XRG_PTYP_FP64:
+		return is_array ? "double[]" : "double";
+	case XRG_PTYP_BYTEA:
+		switch (ltyp) {
+		case XRG_LTYP_STRING:
+			return is_array ? "string[]" : "string";
+		default:
+			return is_array ? "bytea[]" : "bytea";
+		}
+		break;
+	default:
+		break;
+	}
+
+	return "";
 }
 
-void pg_typ_to_xrg_typ(Oid t, int32_t typmod, int16_t *ptyp, int16_t *ltyp, int16_t *precision, int16_t *scale, bool *is_array) {
+static void pg_typ_to_xrg_typ(Oid t, int32_t typmod, int16_t *ptyp, int16_t *ltyp, int16_t *precision, int16_t *scale, bool *is_array) {
 	*is_array = false;
 	switch (t) {
 	case BOOLOID: {
@@ -219,6 +220,17 @@ void pg_typ_to_xrg_typ(Oid t, int32_t typmod, int16_t *ptyp, int16_t *ltyp, int1
 		*ptyp = XRG_PTYP_INT64;
 		*ltyp = XRG_LTYP_DECIMAL;
 		*is_array = true;
+		if (typmod >= (int32)VARHDRSZ) {
+			int32_t tmp = typmod - VARHDRSZ;
+			*precision = (tmp >> 16) & 0xFFFF;
+			*scale = tmp & 0xFFFF;
+
+			if (*precision <= 18) {
+				*ptyp = XRG_PTYP_INT64;
+			} else {
+				*ptyp = XRG_PTYP_INT128;
+			}
+		}
 	}
 		return;
 	case BYTEAOID: {
@@ -262,9 +274,9 @@ void kite_build_schema(StringInfo schema, TupleDesc tupdesc) {
 
 		pg_typ_to_xrg_typ(attr->atttypid, attr->atttypmod, &ptyp, &ltyp, &precision, &scale, &is_array);
 		char *colname = NameStr(attr->attname);
-		const char *type = xrg_typ_str(ptyp, ltyp);
+		const char *type = xrg_typ_str(ptyp, ltyp, is_array);
 
-		if (strcmp(type, "decimal") == 0) {
+		if (strcmp(type, "decimal") == 0 || strcmp(type, "decimal[]") == 0) {
 			appendStringInfo(schema, "%s:%s:%d:%d\n", colname, type, precision, scale);
 
 		} else {

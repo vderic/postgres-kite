@@ -297,12 +297,12 @@ static int hagg_reclen(void *context, const void *src) {
 
 static void hagg_serialize(void *context, const void *src, void *dest, int destsz) {
 	xrg_iter_t *iter = (xrg_iter_t *) src;
-	char *p = dest;
+	char *flag = record_get_flag(dest);
+	char *p = record_get_data(dest, iter->nvec);
 
 	for (int i = 0 ; i < iter->nvec ; i++) {
-		p[i] = *iter->flag[i];
+		flag[i] = *iter->flag[i];
 	}
-	p += xrg_align(16, iter->nvec);
 
 	for (int i = 0 ; i < iter->nvec ; i++) {
 		if (iter->attr[i].itemsz >= 0) {

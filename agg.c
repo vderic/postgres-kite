@@ -76,22 +76,20 @@ static int hagg_keyeq(void *context, void *rec1, void *src2) {
 			return 0;
 		}
 
-		if (f1[k] & XRG_FLAG_NULL) {
-			continue;
-		}
+		if (!(f1[k] & XRG_FLAG_NULL)) {
+			if (itemsz > 0) {
+				if (memcmp(p1, p2, itemsz) != 0) {
+					return 0;
+				}
+			} else {
+				int itemsz1 = xrg_bytea_len(p1);
+				int itemsz2 = xrg_bytea_len(p2);
+				const char* ptr1 = xrg_bytea_ptr(p1);
+				const char* ptr2 = xrg_bytea_ptr(p2);
 
-		if (itemsz > 0) {
-			if (memcmp(p1, p2, itemsz) != 0) {
-				return 0;
-			}
-		} else {
-			int itemsz1 = xrg_bytea_len(p1);
-			int itemsz2 = xrg_bytea_len(p2);
-			const char* ptr1 = xrg_bytea_ptr(p1);
-			const char* ptr2 = xrg_bytea_ptr(p2);
-
-			if (itemsz1 != itemsz2 || memcmp(ptr1, ptr2, itemsz1) != 0) {
-				return 0;
+				if (itemsz1 != itemsz2 || memcmp(ptr1, ptr2, itemsz1) != 0) {
+					return 0;
+				}
 			}
 		}
 

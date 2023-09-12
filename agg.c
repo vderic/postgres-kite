@@ -5,6 +5,14 @@
 
 extern bool aggfnoid_is_avg(int aggfnoid);
 
+static const char *record_get_flag(const char *p) {
+	return p;
+}
+
+static const char *record_get_data(const char *p, int ncol) {
+	return p+xrg_align(16, ncol);
+}
+
 static const char *column_next(xrg_attr_t *attr, const char *p) {
 	if (attr->itemsz > 0) {
 		p +=  attr->itemsz;
@@ -34,6 +42,7 @@ static int get_ncol_from_aggfnoids(List *aggfnoids) {
 static int hagg_keyeq(void *context, void *rec1, void *src2) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	const char *p1, *p2;
+	const char *f1;
 	xrg_iter_t *iter = (xrg_iter_t *) src2;
 	int itemsz = 0;
 	xrg_attr_t *attr = agg->attr;
@@ -44,7 +53,8 @@ static int hagg_keyeq(void *context, void *rec1, void *src2) {
 	}
 
 	ngrpby = list_length(agg->groupby_attrs);
-	p1 = rec1;
+	f1 = record_get_flag(rec1);
+	p1 = record_get_data(rec1, agg->ncol);
 	p2 = 0;
 	for (int i = 0, n = 0, k = 0 ; i < agg->ntlist && n < ngrpby && k < iter->nvec ; i++) {
 
@@ -61,6 +71,14 @@ static int hagg_keyeq(void *context, void *rec1, void *src2) {
 		}
 
 		itemsz = attr->itemsz;
+
+		if (f1[k] != *iter->flag[k]) {
+			return 0;
+		}
+
+		if (f1[k] & XRG_FLAG_NULL) {
+			continue;
+		}
 
 		if (itemsz > 0) {
 			if (memcmp(p1, p2, itemsz) != 0) {
@@ -215,8 +233,10 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
        	Datum *datums, bool *flags, int ndatum) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	void **translist = (void  **)data;
-	const char *p = rec;
+	const char *flag = record_get_flag(rec);
+	const char *p = record_get_data(rec, agg->ncol);
 	xrg_attr_t *attr = agg->attr;
+	int n = 0;
 
 	for (int i = 0 ; i < agg->ntlist ; i++) {
 		kite_target_t *tgt = &agg->tlist[i];
@@ -224,7 +244,8 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 		void *transdata = translist[i];
 		Oid aggfn = tgt->aggfn;
 		int atttypmod = (attinmeta) ? attinmeta->atttypmods[k-1] : 0;
-		Oid atttypid = (attinmeta) ? attinmeta->tupdesc->attrs[k-1].atttypid: 0;
+		//Form_pg_attribute pg_attr = (attinmeta) ? &attinmeta->tupdesc->attrs[k-1] : 0;
+		Oid atttypid = (attinmeta) ? attinmeta->tupdesc->attrs[k-1].atttypid : 0;
 
 		// datums[k] =  value[i]
 		if (transdata) {
@@ -232,21 +253,22 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 			// finalize_aggregate();
 			if (aggfnoid_is_avg(aggfn)) {
 				//finalize_avg();
-				avg_decode(aggfn, transdata, 0, attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
+				avg_decode(aggfn, transdata, flag[n], attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
 			} else {
-				var_decode(transdata, 0, attr, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
+				var_decode(transdata, flag[n], attr, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
 			}
 
 			for (int j = 0 ; j < top ; j++) {
 				p = column_next(attr, p);
 				attr++;
+				n++;
 			}
 		} else {
 			// MUST advance the next pointer first because bytea size header will be altered to match postgres
 			const char *p1 = p;
 			xrg_attr_t *attr1 = attr;
 			p = column_next(attr++, p);
-			var_decode((char *) p1, 0, attr1, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
+			var_decode((char *) p1, flag[n++], attr1, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
 		}
 	}
 
@@ -258,6 +280,9 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 static int hagg_reclen(void *context, const void *src) {
 	xrg_iter_t *iter = (xrg_iter_t *) src;
 	int sz = 0;
+
+	// null flag
+	sz += xrg_align(16, iter->nvec);
 
 	for (int i = 0 ; i < iter->nvec ; i++) {
 		if (iter->attr[i].itemsz >= 0) {
@@ -273,6 +298,11 @@ static int hagg_reclen(void *context, const void *src) {
 static void hagg_serialize(void *context, const void *src, void *dest, int destsz) {
 	xrg_iter_t *iter = (xrg_iter_t *) src;
 	char *p = dest;
+
+	for (int i = 0 ; i < iter->nvec ; i++) {
+		p[i] = *iter->flag[i];
+	}
+	p += xrg_align(16, iter->nvec);
 
 	for (int i = 0 ; i < iter->nvec ; i++) {
 		if (iter->attr[i].itemsz >= 0) {
@@ -343,8 +373,10 @@ static void build_tlist(xrg_agg_t *agg) {
 xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_attrs) {
 
 	xrg_agg_t *agg = (xrg_agg_t*) malloc(sizeof(xrg_agg_t));
-	hagg_dispatch_t dispatch;
 	Assert(agg);
+
+	hagg_dispatch_t dispatch;
+	memset(&dispatch, 0, sizeof(dispatch));
 
 	agg->reached_eof = false;
 	agg->attr = 0;
@@ -393,7 +425,6 @@ void xrg_agg_destroy(xrg_agg_t *agg) {
 
 static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter) {
 	ListCell *lc;
-	int ret = 0;
 
 	if (iter->nvec != agg->ncol) {
 		elog(ERROR, "xrg_agg_process: number of columns returned from kite not match (%d != %d)", 
@@ -401,7 +432,6 @@ static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter) {
 		return 1;
 	}
 
-	int len = 0;
 	uint64_t hval = 0; // hash value of the groupby keys
 
 	if (! agg->attr) {

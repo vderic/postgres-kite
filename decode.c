@@ -626,11 +626,19 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2101: // PG_PROC_avg_2101: /* avg int4 */
 	case 2102: // PG_PROC_avg_2102: /* avg int2 */
 	{
-		int64_t avg = accum->sum.i64 / accum->count;
-		*pg_datum = Int64GetDatum(avg);
+		FmgrInfo flinfo;
+		int64_t v = accum->sum.i64 / accum->count;
+		char dst[MAX_DEC128_STRLEN];
+		int precision = 38;
+		int scale = 0;
+		decimal64_to_string(v, precision, scale, dst, sizeof(dst));
+		memset(&flinfo, 0, sizeof(FmgrInfo));
+		flinfo.fn_addr = numeric_in;
+		flinfo.fn_nargs = 3;
+		flinfo.fn_strict = true;
+		*pg_datum = InputFunctionCall(&flinfo, dst, 0, atttypmod);
 		*pg_isnull = false;
 		break;
-
 	}
 	case 2103: // PG_PROC_avg_2103: /* avg numeric */
 	{

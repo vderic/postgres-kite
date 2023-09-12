@@ -5,11 +5,11 @@
 
 extern bool aggfnoid_is_avg(int aggfnoid);
 
-static const char *record_get_flag(const char *p) {
+static inline const char *record_get_flag(const char *p) {
 	return p;
 }
 
-static const char *record_get_data(const char *p, int ncol) {
+static inline const char *record_get_data(const char *p, int ncol) {
 	return p+xrg_align(16, ncol);
 }
 

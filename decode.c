@@ -327,6 +327,8 @@ static Datum decode_dec64av(xrg_array_header_t *arr, int sz, int precision, int 
 			decimal64_to_string(v, precision, scale, dst, sizeof(dst));
 			appendStringInfoString(&str, dst);
 			p += sizeof(int64_t);
+		} else {
+			appendStringInfoString(&str, "NULL");
 		}
 	}
 	appendStringInfoCharMacro(&str, '}');

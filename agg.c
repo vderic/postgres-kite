@@ -252,6 +252,9 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 			if (aggfnoid_is_avg(aggfn)) {
 				//finalize_avg();
 				avg_decode(aggfn, transdata, flag[n], attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
+			} else if (aggfn == 2110) { 
+				// sum float. cast down from double to float
+				sum_float_decode(aggfn, transdata, flag[n], attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
 			} else {
 				var_decode(transdata, flag[n], attr, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
 			}

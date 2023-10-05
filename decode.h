@@ -9,4 +9,6 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttyp
 
 int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttypmod, Datum *pg_datum, bool *pg_isnull);
 
+int sum_float_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttypmod, Datum *pg_datum, bool *pg_isnull);
+
 #endif

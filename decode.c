@@ -564,13 +564,13 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttyp
 
 	// TODO: date, timestamp, numeric need further processing
 	if (ltyp == XRG_LTYP_ARRAY && ptyp == XRG_PTYP_BYTEA) {
-		xrg_array_header_t *ptr = (xrg_array_header_t *) xrg_bytea_ptr(data);
-		int sz = xrg_bytea_len(data);
-		//int16_t array_ptyp = xrg_array_ptyp(ptr);
-		int16_t array_ltyp = xrg_array_ltyp(ptr);
 		if (flag & XRG_FLAG_NULL) {
 			*pg_datum = 0;
 		} else {
+			xrg_array_header_t *ptr = (xrg_array_header_t *) xrg_bytea_ptr(data);
+			int sz = xrg_bytea_len(data);
+			//int16_t array_ptyp = xrg_array_ptyp(ptr);
+			int16_t array_ltyp = xrg_array_ltyp(ptr);
 
 			switch (array_ltyp) {
 			case XRG_LTYP_DATE:
@@ -602,6 +602,15 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttyp
 	}
 
 	return 0;
+} 
+
+int sum_float_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttypmod, Datum *pg_datum, bool *pg_isnull) {
+	(void) aggfn;
+	double v = *((double *) data);
+	float f = (float) v;
+	*pg_isnull = (flag & XRG_FLAG_NULL);
+	*pg_datum = Float4GetDatum(f);
+	return 0;
 }
 
 int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttypmod, Datum *pg_datum, bool *pg_isnull) {
@@ -612,7 +621,8 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2100: // PG_PROC_avg_2100: /* avg int8 */
 	{
 		FmgrInfo flinfo;
-		if (accum->count == 0) {
+
+		if (flag || accum->count == 0) {
 			*pg_datum = 0;
 			*pg_isnull = true;
 			break;
@@ -635,7 +645,7 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2102: // PG_PROC_avg_2102: /* avg int2 */
 	{
 		FmgrInfo flinfo;
-		if (accum->count == 0) {
+		if (flag || accum->count == 0) {
 			*pg_datum = 0;
 			*pg_isnull = true;
 			break;
@@ -657,7 +667,7 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2103: // PG_PROC_avg_2103: /* avg numeric */
 	{
 		FmgrInfo flinfo;
-		if (accum->count == 0) {
+		if (flag || accum->count == 0) {
 			*pg_datum = 0;
 			*pg_isnull = true;
 			break;
@@ -681,7 +691,7 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 	case 2104: // PG_PROC_avg_2104: /* avg float4 */
 	case 2105: // PG_PROC_avg_2105: /* avg float8 */
 	{
-		if (accum->count == 0) {
+		if (flag || accum->count == 0) {
 			*pg_datum = 0;
 			*pg_isnull = true;
 			break;

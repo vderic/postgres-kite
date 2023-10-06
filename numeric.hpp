@@ -20,6 +20,10 @@ void max_numeric(void *transdata, const void *data, xrg_attr_t *attr);
 
 int avg_numeric_finalize(char *data, xrg_attr_t *attr, __int128_t *avg, int *precision, int *scale);
 
+int avg_int64_finalize(int64_t i64sum, int64_t i64count, __int128_t *avg, int *precision, int *scale);
+
+int avg_int128_finalize(__int128_t i128sum, int64_t i64count, __int128_t *avg, int *precision, int *scale);
+
 #ifdef __cplusplus
 }
 #endif

@@ -629,9 +629,11 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 		}
 
 		char dst[MAX_DEC128_STRLEN];
-		__int128_t v = accum->sum.i128 / accum->count;
-		int precision = 38;
-		int scale = 0;
+		int precision, scale;
+		__int128_t v = 0;
+		if (avg_int128_finalize(accum->sum.i128, accum->count, &v, &precision, &scale) != 0) {
+			elog(ERROR, "avg_int128_finalize error");
+		}
 		decimal128_to_string(v, precision, scale, dst, sizeof(dst));
 		memset(&flinfo, 0, sizeof(FmgrInfo));
 		flinfo.fn_addr = numeric_in;
@@ -652,10 +654,12 @@ int avg_decode(Oid aggfn, char *data, char flag, xrg_attr_t *attr, Oid atttypid,
 		}
 
 		char dst[MAX_DEC128_STRLEN];
-		int64_t v = accum->sum.i64 / accum->count;
-		int precision = 38;
-		int scale = 0;
-		decimal64_to_string(v, precision, scale, dst, sizeof(dst));
+		int precision, scale;
+		__int128_t v = 0;
+		if (avg_int64_finalize(accum->sum.i64, accum->count, &v, &precision, &scale) != 0) {
+			elog(ERROR, "avg_int64_finalize error");
+		}
+		decimal128_to_string(v, precision, scale, dst, sizeof(dst));
 		memset(&flinfo, 0, sizeof(FmgrInfo));
 		flinfo.fn_addr = numeric_in;
 		flinfo.fn_nargs = 3;

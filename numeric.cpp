@@ -97,6 +97,60 @@ int avg_numeric_finalize(char *data, xrg_attr_t *attr, __int128_t *avg, int *pre
 	return 0;
 }
 
+int avg_int64_finalize(int64_t i64sum, int64_t i64count, __int128_t *avg, int *precision, int *scale) {
+        try {
+                arrow::Decimal128 *ret = (arrow::Decimal128 *)avg;
+                arrow::Decimal128 sum(i64sum);
+                arrow::Decimal128 count(i64count);
+
+                int p1 = count_digit(static_cast<uint64_t>(i64sum));
+                int s1 = 0;
+                int p2 = count_digit(static_cast<uint64_t>(i64count));
+                int s2 = 0;
+
+                auto [p3, s3] = dec_DIV_precision_scale(p1, s1, p2, s2);
+                *ret = div_scalar(sum, count, p3, s3);
+
+                *precision = p3;
+                *scale = s3;
+
+        } catch (const std::runtime_error &ex) {
+                std::cerr << ex.what() << std::endl;
+                return 1;
+        } catch (...) {
+                return 2;
+        }
+
+        return 0;
+}
+
+int avg_int128_finalize(__int128_t i128sum, int64_t i64count, __int128_t *avg, int *precision, int *scale) {
+        try {
+                arrow::Decimal128 *ret = (arrow::Decimal128 *)avg;
+                arrow::Decimal128 sum((uint8_t*) &i128sum);
+                arrow::Decimal128 count(i64count);
+
+                int p1 = get_precision(sum);
+                int s1 = 0;
+                int p2 = count_digit(static_cast<uint64_t>(i64count));
+                int s2 = 0;
+
+                auto [p3, s3] = dec_DIV_precision_scale(p1, s1, p2, s2);
+                *ret = div_scalar(sum, count, p3, s3);
+
+                *precision = p3;
+                *scale = s3;
+
+        } catch (const std::runtime_error &ex) {
+                std::cerr << ex.what() << std::endl;
+                return 1;
+        } catch (...) {
+                return 2;
+        }
+
+        return 0;
+}
+
 #if 0
 
 int get_precision(const arrow::Decimal128 &dec) {

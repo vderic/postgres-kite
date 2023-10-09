@@ -35,19 +35,39 @@ void sum_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
 
 /* min */
 void min_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
-	arrow::Decimal128 *accum = (arrow::Decimal128 *) transdata;
-	const arrow::Decimal128 *dec = (const arrow::Decimal128 *) data;
-	if (*accum > *dec) {
-		*accum = *dec;
+	if (attr->ptyp == XRG_PTYP_INT64) {
+		int64_t i64accum = *((int64_t *) transdata);
+		int64_t i64data = *((int64_t *) data);
+		arrow::Decimal128 accum(i64accum);
+		arrow::Decimal128 dec(i64data);
+		if (accum > dec) {
+			*((int64_t *) transdata) = static_cast<int64_t>(dec);
+		}
+ 	} else if (attr->ptyp == XRG_PTYP_INT128) {
+		arrow::Decimal128 *accum = (arrow::Decimal128 *) transdata;
+		const arrow::Decimal128 *dec = (const arrow::Decimal128 *) data;
+		if (*accum > *dec) {
+			*accum = *dec;
+		}
 	}
 }
 
 /* max */
 void max_numeric(void *transdata, const void *data, xrg_attr_t *attr) {
-	arrow::Decimal128 *accum = (arrow::Decimal128 *) transdata;
-	const arrow::Decimal128 *dec = (const arrow::Decimal128 *) data;
-	if (*accum < *dec) {
-		*accum = *dec;
+	if (attr->ptyp == XRG_PTYP_INT64) {
+		int64_t i64accum = *((int64_t *) transdata);
+		int64_t i64data = *((int64_t *) data);
+		arrow::Decimal128 accum(i64accum);
+		arrow::Decimal128 dec(i64data);
+		if (accum < dec) {
+			*((int64_t *) transdata) = static_cast<int64_t>(dec);
+		}
+ 	} else if (attr->ptyp == XRG_PTYP_INT128) {
+		arrow::Decimal128 *accum = (arrow::Decimal128 *) transdata;
+		const arrow::Decimal128 *dec = (const arrow::Decimal128 *) data;
+		if (*accum < *dec) {
+			*accum = *dec;
+		}
 	}
 }
 

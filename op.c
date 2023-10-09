@@ -202,7 +202,11 @@ void aggregate(int32_t aggfn, transinfo_t *transinfo, const void *data, xrg_attr
 		/* 2244, bpchar, nyi */
 		/* 2797, tid, nyi */
 		if (transinfo->flag) {
-			ASSIGN(__int128_t, transinfo->transvalue, data);
+			if (attr->ptyp == XRG_PTYP_INT64) {
+				ASSIGN(int64_t, transinfo->transvalue, data);
+			} else if (attr->ptyp == XRG_PTYP_INT128) {
+				ASSIGN(__int128_t, transinfo->transvalue, data);
+			}
 			transinfo->flag = 0;
 		} else {
 			max_numeric(transinfo->transvalue, data, attr);
@@ -279,7 +283,11 @@ void aggregate(int32_t aggfn, transinfo_t *transinfo, const void *data, xrg_attr
 		/* 2245 bpchar nyi */
 		/* 2798 tid nyi */
 		if (transinfo->flag) {
-			ASSIGN(__int128_t, transinfo->transvalue, data);
+			if (attr->ptyp == XRG_PTYP_INT64) {
+				ASSIGN(int64_t, transinfo->transvalue, data);
+			} else if (attr->ptyp == XRG_PTYP_INT128) {
+				ASSIGN(__int128_t, transinfo->transvalue, data);
+			}
 			transinfo->flag = 0;
 		} else {
 			min_numeric(transinfo->transvalue, data, attr);

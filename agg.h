@@ -52,12 +52,19 @@ struct avg_trans_t {
 		double fp64;
 	} sum;
 	int64_t count;
+	char flag;
+};
+
+typedef struct transinfo_t transinfo_t;
+struct transinfo_t {
+	char flag;
+	void *transvalue;
 };
 
 int avg_trans_init(int32_t aggfn, avg_trans_t *pt, const void *p1, xrg_attr_t *attr1,
                 const void *p2, xrg_attr_t *attr2);
 
-void aggregate(int32_t aggfn, void *transdata, const void *data, xrg_attr_t *attr);
+void aggregate(int32_t aggfn, transinfo_t *transinfo, const void *data, xrg_attr_t *attr);
 
 #endif
 

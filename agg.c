@@ -105,7 +105,7 @@ static int hagg_keyeq(void *context, void *rec1, void *src2) {
 static int transdata_size(void *context) {
 	ListCell *lc;
 	xrg_agg_t *agg = (xrg_agg_t *) context;
-	int sz = sizeof(void*) * list_length(agg->aggfnoids);
+	int sz = sizeof(transinfo_t) * list_length(agg->aggfnoids);
 
 	xrg_attr_t *attr = agg->attr;
 	foreach (lc, agg->aggfnoids) {
@@ -134,7 +134,7 @@ static int transdata_size(void *context) {
 static void *hagg_init(void *context) {
 	ListCell *lc;
 	char *transdata = 0, *p = 0; 
-	void **translist = 0;
+	transinfo_t *translist = 0;
 	xrg_agg_t *agg = (xrg_agg_t *) context;
 	int transsz = transdata_size(context);
 
@@ -149,26 +149,28 @@ static void *hagg_init(void *context) {
 		return 0;
 	}
 
-	translist = (void **) transdata;
+	translist = (transinfo_t *) transdata;
 
-	p += sizeof(void*) * list_length(agg->aggfnoids);
+	p += sizeof(transinfo_t) * list_length(agg->aggfnoids);
 
 	int i = 0;
 	xrg_attr_t *attr = agg->attr;
 	foreach (lc, agg->aggfnoids) {
 		Oid fn = lfirst_oid(lc);
+
+		translist[i].flag = XRG_FLAG_NULL;
 		if (fn > 0) {
 			if (aggfnoid_is_avg(fn)) {
 				attr += 2;
-				translist[i] = p;
+				translist[i].transvalue = p;
 				p += sizeof(avg_trans_t);
 			} else {
-				translist[i] = p;
+				translist[i].transvalue = p;
 				p += attr->itemsz;
 				attr++;
 			}
 		} else {
-			translist[i] = 0;
+			translist[i].transvalue = 0;
 			attr++;
 		}
 		i++;
@@ -179,27 +181,31 @@ static void *hagg_init(void *context) {
 
 static void *hagg_trans(void *context, void *rec, void *data) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
-	void **translist = (void  **)data;
+	transinfo_t *translist = (transinfo_t *)data;
 	xrg_iter_t *iter = (xrg_iter_t *) rec;
 	const char *p = 0;
+	char flag = 0;
 	xrg_attr_t *attr = agg->attr;
 
 	for (int i = 0, k = 0; i < agg->ntlist && k < iter->nvec ; i++) {
 		kite_target_t *tgt = &agg->tlist[i];
 		int nkiteattr = list_length(tgt->attrs);
 		Oid aggfn = tgt->aggfn;
-		void *transdata = translist[i];
+		transinfo_t *transinfo = &translist[i];
 
 		p = iter->value[k];
+		flag = *iter->flag[k];
 
-		if (! transdata) {
+		if (! transinfo->transvalue) {
 			attr++;
 			k++;
 			continue;
 		}
 
 		if (nkiteattr == 1) {
-			aggregate(aggfn, transdata, p, attr);
+			if (!flag) {
+				aggregate(aggfn, transinfo, p, attr);
+			}
 			attr++;
 			k++;
 			continue;
@@ -216,7 +222,9 @@ static void *hagg_trans(void *context, void *rec, void *data) {
 				return 0;
 			}
 
-			aggregate(aggfn, transdata, &pt, attr1);
+			if (!flag) {
+				aggregate(aggfn, transinfo, &pt, attr1);
+			}
 			continue;
 		} else {
 			elog(ERROR, "hagg_trans: aggregate functions won't have more than 2 columns");
@@ -230,7 +238,7 @@ static void *hagg_trans(void *context, void *rec, void *data) {
 static void finalize(void *context, const void *rec, void *data, AttInMetadata *attinmeta,
        	Datum *datums, bool *flags, int ndatum) {
 	xrg_agg_t *agg = (xrg_agg_t *) context;
-	void **translist = (void  **)data;
+	transinfo_t *translist = (transinfo_t *)data;
 	const char *flag = record_get_flag(rec);
 	const char *p = record_get_data(rec, agg->ncol);
 	xrg_attr_t *attr = agg->attr;
@@ -239,24 +247,24 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 	for (int i = 0 ; i < agg->ntlist ; i++) {
 		kite_target_t *tgt = &agg->tlist[i];
 		int k = tgt->pgattr;
-		void *transdata = translist[i];
+		transinfo_t *transinfo = &translist[i];
 		Oid aggfn = tgt->aggfn;
 		int atttypmod = (attinmeta) ? attinmeta->atttypmods[k-1] : 0;
 		//Form_pg_attribute pg_attr = (attinmeta) ? &attinmeta->tupdesc->attrs[k-1] : 0;
 		Oid atttypid = (attinmeta) ? attinmeta->tupdesc->attrs[k-1].atttypid : 0;
 
 		// datums[k] =  value[i]
-		if (transdata) {
+		if (transinfo->transvalue) {
 			int top = list_length(tgt->attrs);
 			// finalize_aggregate();
 			if (aggfnoid_is_avg(aggfn)) {
 				//finalize_avg();
-				avg_decode(aggfn, transdata, flag[n], attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
+				avg_decode(aggfn, transinfo->transvalue, transinfo->flag, attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
 			} else if (aggfn == 2110) { 
 				// sum float. cast down from double to float
-				sum_float_decode(aggfn, transdata, flag[n], attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
+				sum_float_decode(aggfn, transinfo->transvalue, transinfo->flag, attr, atttypid, atttypmod, &datums[k-1], &flags[k-1]);
 			} else {
-				var_decode(transdata, flag[n], attr, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
+				var_decode(transinfo->transvalue, transinfo->flag, attr, atttypid, atttypmod, &datums[k-1], &flags[k-1], true);
 			}
 
 			for (int j = 0 ; j < top ; j++) {

@@ -588,6 +588,17 @@ foreign_expr_walker(Node *node,
 						 fe->inputcollid != inner_cxt.collation)
 					return false;
 
+                                /* KITE only deal with simple aggregate function. FuncExpr with aggregate is not supported */
+                                ListCell *lc;
+                                foreach (lc, fe->args)
+                                {
+                                        /* KITE if Aggref presents in args, return false */
+                                        Node *n = (Node *) lfirst(lc);
+                                        if (IsA(n, Aggref) || !foreign_expr_walker(n,
+                                                                                         glob_cxt, &inner_cxt, case_arg_cxt))
+                                                return false;
+                                }
+
 				/*
 				 * Detect whether node is introducing a collation not derived
 				 * from a foreign Var.  (If so, we just mark it unsafe for now

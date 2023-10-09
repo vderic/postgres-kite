@@ -445,6 +445,10 @@ static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter) {
 		int idx = lfirst_int(lc);
 		int itemsz = iter->attr[idx].itemsz;
 		const char *p = iter->value[idx];
+		char flag = *iter->flag[idx];
+		if (flag) {
+			continue;
+		}
 		if (itemsz < 0) {
 			itemsz = xrg_bytea_len(iter->value[idx]);
 			p = xrg_bytea_ptr(iter->value[idx]);

@@ -452,6 +452,10 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttyp
 
 	// data in iter->value[idx] and iter->flag[idx] and iter->attrs[idx].ptyp
 	*pg_isnull = (flag & XRG_FLAG_NULL);
+	if (*pg_isnull) {
+		*pg_datum = 0;
+		return 0;
+	}
 
 	switch (ltyp) {
 	case XRG_LTYP_NONE:
@@ -556,8 +560,10 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttyp
 		if (flag & XRG_FLAG_NULL) {
 			*pg_datum = 0;
 		} else {
-			SET_VARSIZE(data, sz + VARHDRSZ);
-			*pg_datum = PointerGetDatum(data);
+			char * ret = palloc(sz+VARHDRSZ);
+			memcpy(ret, data, sz+VARHDRSZ);
+			SET_VARSIZE(ret, sz + VARHDRSZ);
+			*pg_datum = PointerGetDatum(ret);
 		}
 		return 0;
 	}

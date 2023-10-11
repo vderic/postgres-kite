@@ -80,6 +80,30 @@ static void avg_double(void *transdata, const void *data, xrg_attr_t *attr) {
 	accum->sum.fp64 += rec->sum.fp64;
 }
 
+/* string min/max operations */
+static void min_bytea(void **transdata, const void *data, xrg_attr_t *attr) {
+	char *tb = *((char **) transdata);
+	int len0 = xrg_bytea_len(tb);
+	const char *ptr0 = xrg_bytea_ptr(tb);
+	int len1 = xrg_bytea_len(data);
+	const char *ptr1 = xrg_bytea_ptr(data);
+
+	if (memcmp(ptr0, ptr1, Min(len0, len1)) < 0) {
+		*transdata = (char *)data;
+	}
+}
+
+static void max_bytea(void **transdata, const void *data, xrg_attr_t *attr) {
+	char *tb = *((char **) transdata);
+	int len0 = xrg_bytea_len(tb);
+	const char *ptr0 = xrg_bytea_ptr(tb);
+	int len1 = xrg_bytea_len(data);
+	const char *ptr1 = xrg_bytea_ptr(data);
+
+	if (memcmp(ptr0, ptr1, Min(len0, len1)) > 0) {
+		*transdata = (char *)data;
+	}
+}
 
 void aggregate(int32_t aggfn, transinfo_t *transinfo, const void *data, xrg_attr_t *attr) {
 
@@ -294,6 +318,25 @@ void aggregate(int32_t aggfn, transinfo_t *transinfo, const void *data, xrg_attr
 		}
 		return;
 
+	case 2145: // min text
+	case 2245: // min bpchar
+		if (transinfo->flag) {
+			ASSIGN(char *, &transinfo->transvalue, data);
+			transinfo->flag = 0;
+		} else {
+			min_bytea(&transinfo->transvalue, data, attr);
+		}
+		return;
+
+	case 2129: // max text
+	case 2244: // max bpchar
+		if (transinfo->flag) {
+			ASSIGN(char *, &transinfo->transvalue, data);
+			transinfo->flag = 0;
+		} else {
+			max_bytea(&transinfo->transvalue, data, attr);
+		}
+		return;
 	default:
 		elog(ERROR, "invalid aggfn %d", aggfn);
 		return;

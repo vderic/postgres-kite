@@ -57,6 +57,7 @@ struct avg_trans_t {
 
 typedef struct transinfo_t transinfo_t;
 struct transinfo_t {
+	bool isvalid;
 	char flag;
 	void *transvalue;
 };

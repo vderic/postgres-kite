@@ -115,11 +115,9 @@ static int transdata_size(void *context) {
 				sz += sizeof(avg_trans_t);
 				attr += 2;
 			} else {
-				if (attr->itemsz < 0) {
-					elog(ERROR, "transdata_create: aggregate function does not support string");
-					return 0;
+				if (attr->itemsz > 0) {
+					sz += attr->itemsz;
 				}
-				sz += attr->itemsz;
 				attr++;
 			}
 		} else {
@@ -160,16 +158,21 @@ static void *hagg_init(void *context) {
 
 		translist[i].flag = XRG_FLAG_NULL;
 		if (fn > 0) {
+			translist[i].isvalid = true;
+			translist[i].transvalue = 0;
 			if (aggfnoid_is_avg(fn)) {
 				attr += 2;
 				translist[i].transvalue = p;
 				p += sizeof(avg_trans_t);
 			} else {
 				translist[i].transvalue = p;
-				p += attr->itemsz;
+				if (attr->itemsz > 0) {
+					p += attr->itemsz;
+				}
 				attr++;
 			}
 		} else {
+			translist[i].isvalid = false;
 			translist[i].transvalue = 0;
 			attr++;
 		}
@@ -196,7 +199,7 @@ static void *hagg_trans(void *context, void *rec, void *data) {
 		p = iter->value[k];
 		flag = *iter->flag[k];
 
-		if (! transinfo->transvalue) {
+		if (! transinfo->isvalid) {
 			attr++;
 			k++;
 			continue;
@@ -254,7 +257,7 @@ static void finalize(void *context, const void *rec, void *data, AttInMetadata *
 		Oid atttypid = (attinmeta) ? attinmeta->tupdesc->attrs[k-1].atttypid : 0;
 
 		// datums[k] =  value[i]
-		if (transinfo->transvalue) {
+		if (transinfo->isvalid) {
 			int top = list_length(tgt->attrs);
 			// finalize_aggregate();
 			if (aggfnoid_is_avg(aggfn)) {

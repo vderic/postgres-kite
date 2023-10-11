@@ -321,7 +321,7 @@ void aggregate(int32_t aggfn, transinfo_t *transinfo, const void *data, xrg_attr
 	case 2145: // min text
 	case 2245: // min bpchar
 		if (transinfo->flag) {
-			ASSIGN(char *, &transinfo->transvalue, data);
+			transinfo->transvalue = (void *) data;
 			transinfo->flag = 0;
 		} else {
 			min_bytea(&transinfo->transvalue, data, attr);
@@ -331,7 +331,7 @@ void aggregate(int32_t aggfn, transinfo_t *transinfo, const void *data, xrg_attr
 	case 2129: // max text
 	case 2244: // max bpchar
 		if (transinfo->flag) {
-			ASSIGN(char *, &transinfo->transvalue, data);
+			transinfo->transvalue = (void *) data;
 			transinfo->flag = 0;
 		} else {
 			max_bytea(&transinfo->transvalue, data, attr);

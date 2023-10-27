@@ -404,15 +404,13 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 	Assert(aggfnoids);
 	agg->ncol = get_ncol_from_aggfnoids(aggfnoids);
 
-	dispatch.keyeq = hagg_keyeq;
-	dispatch.init = hagg_init;
-	dispatch.trans = hagg_trans;
-	dispatch.reclen = hagg_reclen;
+	dispatch.keyeqfn = hagg_keyeq;
+	dispatch.initfn = hagg_init;
+	dispatch.transfn = hagg_trans;
 	dispatch.serialize = hagg_serialize;
 	dispatch.reset = 0;
-	dispatch.checkstop = 0;
 
-	agg->hagg = hagg_start(agg, LLONG_MAX, &agg->aggdata_memusage, ".", &dispatch);
+	agg->hagg = hagg_open(agg, LLONG_MAX, &agg->aggdata_memusage, ".", dispatch);
 
 	return agg;
 }
@@ -420,7 +418,7 @@ xrg_agg_t *xrg_agg_init(List *retrieved_attrs, List *aggfnoids, List *groupby_at
 void xrg_agg_destroy(xrg_agg_t *agg) {
 	if (agg) {
 		if (agg->hagg) {
-			hagg_release(agg->hagg);
+			hagg_close(agg->hagg);
 		}
 		if (agg->attr) {
 			free(agg->attr);
@@ -469,7 +467,8 @@ static int xrg_agg_process(xrg_agg_t *agg, xrg_iter_t *iter) {
 
 	}
 
-	return hagg_feed(agg->hagg, hval, iter, -1);
+	int reclen = hagg_reclen(agg->hagg, iter);
+	return hagg_feed(agg->hagg, hval, iter, reclen);
 }
 
 int xrg_agg_fetch(xrg_agg_t *agg, kite_handle_t *hdl) {

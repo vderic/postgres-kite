@@ -397,7 +397,7 @@ kiteGetForeignRelSize(PlannerInfo *root,
 	 * permissions, the query would have failed at runtime anyway.
 	 */
 	if (fpinfo->use_remote_estimate) {
-		Oid userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
+		Oid userid = OidIsValid(baserel->userid) ? baserel->userid : GetUserId();
 
 		fpinfo->user = GetUserMapping(userid, fpinfo->server->serverid);
 	} else
@@ -540,6 +540,7 @@ kiteGetForeignPaths(PlannerInfo *root,
 		NIL, /* no pathkeys */
 		baserel->lateral_relids,
 		NULL, /* no extra plan */
+		NIL,  /* no fdw_restrictinfo list */
 		NIL); /* no fdw_private list */
 	add_path(baserel, (Path *)path);
 }
@@ -893,12 +894,12 @@ kiteBeginForeignScan(ForeignScanState *node, int eflags) {
 	 * lowest-numbered member RTE as a representative; we would get the same
 	 * result from any.
 	 */
+	userid = OidIsValid(fsplan->checkAsUser) ? fsplan->checkAsUser : GetUserId();
 	if (fsplan->scan.scanrelid > 0)
 		rtindex = fsplan->scan.scanrelid;
 	else
-		rtindex = bms_next_member(fsplan->fs_relids, -1);
+		rtindex = bms_next_member(fsplan->fs_base_relids, -1);
 	rte = exec_rt_fetch(rtindex, estate);
-	userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
 
 	/* Get info about foreign table. */
 	table = GetForeignTable(rte->relid);
@@ -2193,6 +2194,7 @@ foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel,
 				true,
 				false,
 				false,
+				false,
 				root->qual_security_level,
 				grouped_rel->relids,
 				NULL,
@@ -2402,6 +2404,7 @@ add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 		total_cost,
 		NIL, /* no pathkeys */
 		NULL,
+		NIL,  /* no fdw_restrictinfo list */
 		NIL); /* no fdw_private */
 
 	/* Add generated path into grouped_rel by add_path(). */
@@ -2513,6 +2516,7 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 					path->total_cost,
 					path->pathkeys,
 					NULL,  /* no extra plan */
+					NIL,   /* no fdw_restrictinfo list */
 					NULL); /* no fdw_private */
 
 				/* and add it to the final_rel */
@@ -2631,6 +2635,7 @@ add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 		total_cost,
 		pathkeys,
 		NULL, /* no extra plan */
+		NIL, /* no fdw_restrictinfo list */
 		fdw_private);
 
 	/* and add it to the final_rel */

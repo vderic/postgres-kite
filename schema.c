@@ -259,8 +259,7 @@ static void pg_typ_to_xrg_typ(Oid t, int32_t typmod, int16_t *ptyp, int16_t *lty
 	}
 		return;
 	default: {
-		char *tname = get_type_name(t);
-		if (tname && strcmp(tname, "vector") == 0) {
+		if (cmp_type_name(t, "vector")) {
 			*ptyp = XRG_PTYP_FP32;
 			*ltyp = XRG_LTYP_NONE;
 			*is_array = true;

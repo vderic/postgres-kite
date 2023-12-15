@@ -17,6 +17,6 @@ typedef struct Vector
 }			Vector;
 
 Vector	   *InitVector(int dim);
-char * get_type_name(Oid oid);
+bool cmp_type_name(Oid oid, const char *type_name);
 
 #endif

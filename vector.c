@@ -28,8 +28,8 @@ InitVector(int dim)
  *
  * Note: returns a palloc'd copy of the string, or NULL if no such type.
  */
-char *
-get_type_name(Oid oid)
+bool
+cmp_type_name(Oid oid, const char *type_name)
 {
         HeapTuple       tp;
 
@@ -39,13 +39,15 @@ get_type_name(Oid oid)
         if (HeapTupleIsValid(tp))
         {
                 Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
-                char       *result;
+		bool result = false;
 
-                result = pstrdup(NameStr(typtup->typname));
+                if (strcmp(NameStr(typtup->typname), type_name) == 0) {
+			result = true;
+		}
                 ReleaseSysCache(tp);
                 return result;
         }
         else {
-                return NULL;
+                return false;
 	}
 }

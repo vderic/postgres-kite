@@ -640,8 +640,7 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttyp
                                 if (type_is_array(atttypid)) {
                                         *pg_datum = decode_defaultav(ptr, sz, atttypid, atttypmod);
                                 } else {
-                                        char *tname = get_type_name(atttypid);
-                                        if (tname && strcmp(tname, "vector") == 0) {
+                                        if (cmp_type_name(atttypid, "vector")) {
                                                 // vector type and ndim = atttypmod
                                                 *pg_datum = decode_pgvector(ptr, sz, atttypid, atttypmod);
                                                 return 0;

@@ -743,7 +743,7 @@ kiteGetForeignPlan(PlannerInfo *root,
 		Relation scanrel = table_open(scanrte->relid, NoLock);
 		TupleDesc tupdesc = RelationGetDescr(scanrel);
 		initStringInfo(&schema);
-		kite_build_schema(&schema, tupdesc);
+		kite_build_schema(&schema, scanrte->relid, tupdesc);
 		table_close(scanrel, NoLock);
 	}
 
@@ -3078,7 +3078,7 @@ static bool kite_get_relation_stats(PgFdwRelationInfo *fpinfo, Relation relation
 	{
 		TupleDesc tupdesc = RelationGetDescr(relation);
 		initStringInfo(&schema);
-		kite_build_schema(&schema, tupdesc);
+		kite_build_schema(&schema, RelationGetRelid(relation), tupdesc);
 	}
 	//elog(LOG, "scheam %s", schema.data);
 
@@ -3248,7 +3248,7 @@ kiteAcquireSampleRowsFunc(Relation relation, int elevel,
 	{
 		TupleDesc tupdesc = RelationGetDescr(relation);
 		initStringInfo(&schema);
-		kite_build_schema(&schema, tupdesc);
+		kite_build_schema(&schema, RelationGetRelid(relation), tupdesc);
 	}
 
 	req->hdl = kite_submit(req->host, schema.data, sql.data, -1, fpinfo->fragcnt, fspec, errormsg, sizeof(errormsg));

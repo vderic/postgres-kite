@@ -2,10 +2,12 @@
 #include "agg.h"
 #include "decode.h"
 #include "decimal.h"
+#include "vector.h"
 #include "utils/timestamp.h"
 #include "utils/numeric.h"
 #include "utils/fmgrprotos.h"
 #include "utils/array.h"
+#include "utils/lsyscache.h"
 
 static size_t xrg_typ_size(int16_t ptyp) {
 	switch (ptyp) {
@@ -443,6 +445,41 @@ static Datum decode_defaultav(xrg_array_header_t *arr, int sz, Oid atttypid, int
 	return PointerGetDatum(ret);
 }
 
+static Datum decode_pgvector(xrg_array_header_t *arr, int sz, Oid atttypid, int atttypmod) {
+        int ndim = xrg_array_ndim(arr);
+        int ndims = 0;
+
+        if (sz != xrg_array_size(arr)) {
+                elog(ERROR, "array size does not match with header length");
+        }
+
+        if (ndim != 1) {
+                elog(ERROR, "pgvector: array must be 1-D");
+        }
+
+        ndims = *xrg_array_dims(arr);
+        if (ndims != atttypmod) {
+                elog(ERROR, "pgvector: dimension not match");
+        }
+
+        // check non-null
+        if (xrg_array_hasnull(arr)) {
+                elog(ERROR, "pgvector: embedding cannot have null value");
+        }
+
+        int16_t ptyp = xrg_array_ptyp(arr);
+        int16_t ltyp = xrg_array_ltyp(arr);
+        if (ptyp != XRG_PTYP_FP32 || ltyp != XRG_LTYP_NONE) {
+                elog(ERROR, "pgvector: array element type is not fp32");
+        }
+
+        char *p = xrg_array_data_ptr(arr);
+        Vector *ret = InitVector(atttypmod);
+        memcpy(ret->x, p,  atttypmod * sizeof(float));
+
+        return PointerGetDatum(ret);
+}
+
 /* decode functions */
 int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttypmod, Datum *pg_datum, bool *pg_isnull, bool int128_to_numeric) {
 	int ltyp = attr->ltyp;
@@ -600,8 +637,20 @@ int var_decode(char *data, char flag, xrg_attr_t *attr, Oid atttypid, int atttyp
 				break;
 			}
 			default:
-				*pg_datum = decode_defaultav(ptr, sz, atttypid, atttypmod);
-				break;
+                                if (type_is_array(atttypid)) {
+                                        *pg_datum = decode_defaultav(ptr, sz, atttypid, atttypmod);
+                                } else {
+                                        char *tname = get_type_name(atttypid);
+                                        if (tname && strcmp(tname, "vector") == 0) {
+                                                // vector type and ndim = atttypmod
+                                                *pg_datum = decode_pgvector(ptr, sz, atttypid, atttypmod);
+                                                return 0;
+                                        } else {
+                                                elog(ERROR, "array type mismatch");
+                                                return 1;
+                                        }
+                                }
+                                break;
 			}
 		}
 		return 0;

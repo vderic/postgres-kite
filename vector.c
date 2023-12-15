@@ -43,11 +43,9 @@ get_type_name(Oid oid)
 
                 result = pstrdup(NameStr(typtup->typname));
                 ReleaseSysCache(tp);
-		elog(LOG, "type name is %s", result);
                 return result;
         }
         else {
-		elog(LOG, "type name is NULL");
                 return NULL;
 	}
 }

@@ -61,6 +61,7 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 #include "commands/tablecmds.h"
+#include "vector.h"
 
 /*
  * Global context for foreign_expr_walker's search of an expression tree.
@@ -2954,8 +2955,19 @@ deparseConst(Const *node, deparse_expr_cxt *context, int showtype)
 				appendStringInfoString(buf, "false");
 			break;
 		default:
-			deparseStringLiteral(buf, extval);
-			isstring = true;
+			/* TODO: support pgvector - change [] to {} */
+			if (cmp_type_name(node->consttype, "vector")) {
+				char *vecstr = pstrdup(extval);
+				int len = strlen(vecstr);
+				vecstr[0] = '{';
+				vecstr[len-1] = '}';
+				deparseStringLiteral(buf, vecstr);
+				isstring = true;
+				pfree(vecstr);
+			} else {
+				deparseStringLiteral(buf, extval);
+				isstring = true;
+			}
 			break;
 	}
 
@@ -3288,12 +3300,17 @@ deparseOperatorName(StringInfo buf, Form_pg_operator opform)
 	/* Print schema name only if it's not pg_catalog */
 	if (opform->oprnamespace != PG_CATALOG_NAMESPACE)
 	{
-		const char *opnspname;
+		/* TODO: pgvector operators such as <->, <#>, and <=> */
+		if (strcmp(opname, "<->") == 0 || strcmp(opname, "<#>") == 0 || strcmp(opname, "<=>") == 0) {
+			appendStringInfoString(buf, opname);
+		} else {
+			const char *opnspname;
 
-		opnspname = get_namespace_name(opform->oprnamespace);
-		/* Print fully qualified operator name. */
-		appendStringInfo(buf, "OPERATOR(%s.%s)",
-						 quote_identifier(opnspname), opname);
+			opnspname = get_namespace_name(opform->oprnamespace);
+			/* Print fully qualified operator name. */
+			appendStringInfo(buf, "OPERATOR(%s.%s)",
+							quote_identifier(opnspname), opname);
+		}
 	}
 	else
 	{
